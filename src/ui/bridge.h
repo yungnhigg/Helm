@@ -12,6 +12,7 @@ class Engine;
 class AgentLoop;
 class JobManager;
 class SessionStore;
+class MemoryStore;
 class WorkspaceStore;
 class Registry;
 struct Config;
