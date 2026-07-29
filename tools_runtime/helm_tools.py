@@ -489,13 +489,29 @@ def _ensure_comfyui(base: str, start_command: str, wait_seconds: int = 180) -> N
     start_path = Path(start_command) if start_command else None
     if not start_path or not start_path.is_file():
         fail("ComfyUI is not running and START_COMFYUI.cmd was not found; run Install / repair tools")
+
+    # Launch ComfyUI's own interpreter directly rather than going through
+    # cmd.exe on the .cmd file. Routing through cmd gives the server a console
+    # window, and START_COMFYUI.cmd ends in `pause`, so that window sticks
+    # around after the server stops. CREATE_NO_WINDOW keeps it headless.
+    root = start_path.parent
+    venv_python = root / "ComfyUI" / ".venv" / "Scripts" / "python.exe"
+    comfy_dir = root / "ComfyUI"
+    if venv_python.is_file() and (comfy_dir / "main.py").is_file():
+        command = [str(venv_python), "main.py", "--listen", "127.0.0.1", "--port", "8188"]
+        workdir = str(comfy_dir)
+    else:
+        command = ["cmd.exe", "/d", "/c", str(start_path)]
+        workdir = str(start_path.parent)
+
     try:
         flags = 0
         if os.name == "nt":
-            flags = getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0) | getattr(subprocess, "DETACHED_PROCESS", 0)
+            flags = (getattr(subprocess, "CREATE_NO_WINDOW", 0)
+                     | getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0))
         subprocess.Popen(
-            ["cmd.exe", "/d", "/c", str(start_path)],
-            cwd=str(start_path.parent),
+            command,
+            cwd=workdir,
             stdin=subprocess.DEVNULL,
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,

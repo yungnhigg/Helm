@@ -328,6 +328,10 @@ const handlers = {
   },
 
   turn_done() {
+    // Nothing can still be running once the turn is over. Any row left in the
+    // strip missed its terminal update, so clear it rather than leaving a
+    // progress bar stuck at the top of the view.
+    clearFinishedJobs();
     state.busy = false;
     state.pendingUser = null;
     updateComposerState();
@@ -770,6 +774,12 @@ function addToolChip(label, text, kind) {
   return chip;
 }
 
+function clearFinishedJobs() {
+  const strip = $('jobs');
+  if (!strip) return;
+  for (const row of [...strip.children]) row.remove();
+}
+
 function renderJob(message) {
   let row = $(`job-${message.id}`);
   if (!row) {
@@ -785,7 +795,8 @@ function renderJob(message) {
   }
   row.querySelector('.job-name').textContent = `${message.name} #${message.id}`;
   row.querySelector('.job-track i').style.width = `${Math.max(0, Math.min(100, message.progress || 0))}%`;
-  row.querySelector('.job-note').textContent = message.note || '';
+  const note = String(message.note || '');
+  row.querySelector('.job-note').textContent = note.length > 160 ? note.slice(0, 160) + '…' : note;
   if (message.status && message.status !== 'running') {
     row.querySelector('button')?.remove();
     setTimeout(() => row.remove(), 8000);
