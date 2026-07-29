@@ -1,0 +1,16 @@
+{
+  "name": "Helm Python example tools",
+  "adapter": "stdio-json",
+  "executable": "C:\\Python313\\python.exe",
+  "arguments": "C:\\path\\to\\helm\\examples\\stdio_tool_pack.py",
+  "working_directory": "C:\\path\\to\\helm\\examples",
+  "tools": [
+    {
+      "name": "word_count",
+      "description": "Count words in supplied text using an imported stdio JSON tool.",
+      "parameters": [
+        { "name": "text", "type": "string", "description": "Text to count" }
+      ]
+    }
+  ]
+}

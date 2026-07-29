@@ -1,0 +1,203 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; img-src 'self' data:; style-src 'self'; script-src 'self'; connect-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none'">
+  <title>Helm</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <div id="app">
+    <aside id="sidebar">
+      <div class="brand-row">
+        <img src="assets/helm.png" alt="" class="brand-icon">
+        <div><div class="brand-name">Helm</div><div class="brand-sub">Local AI workspace</div></div>
+      </div>
+
+      <div class="mode-switch" role="tablist" aria-label="Workspace mode">
+        <button id="mode-chat" class="mode active" data-mode="chat">Chat</button>
+        <button id="mode-agent" class="mode" data-mode="agent">Agent</button>
+      </div>
+
+      <button id="new-chat" class="primary wide"><span class="glyph">＋</span> New chat</button>
+
+      <div class="side-section side-grow">
+        <div class="section-label"><span>History</span><button id="refresh-history" class="icon-btn" title="Refresh">↻</button></div>
+        <div id="session-list" class="session-list"></div>
+      </div>
+
+      <div class="side-footer">
+        <button id="open-rag" class="nav-button"><span class="nav-icon">▤</span><span>RAG library</span></button>
+        <button id="open-tools" class="nav-button"><span class="nav-icon">⌘</span><span>AI tooling</span></button>
+      </div>
+    </aside>
+
+    <main id="workspace">
+      <header id="topbar">
+        <div class="page-heading">
+          <button id="back-agents" class="icon-btn back" hidden title="Back to agents">←</button>
+          <div>
+            <h1 id="page-title">Chat</h1>
+            <p id="page-subtitle">Private, local conversation</p>
+          </div>
+        </div>
+        <div class="topbar-actions">
+          <button id="open-settings" class="icon-btn settings-button" title="Runtime settings">⚙</button>
+        <div class="model-status">
+          <span id="model-led" class="status-dot"></span>
+          <span id="model-status-text">No model loaded</span>
+          <button id="unload-model" class="ghost" hidden>Unload</button>
+        </div>
+        </div>
+      </header>
+
+      <section id="chat-view" class="view active">
+        <div id="agent-banner" class="agent-banner" hidden>
+          <div><span id="agent-type-badge" class="badge"></span><strong id="agent-banner-name"></strong></div>
+          <span id="agent-banner-detail"></span>
+        </div>
+        <div id="jobs" class="jobs"></div>
+        <div id="transcript" class="transcript" aria-live="polite"></div>
+        <button id="jump-bottom" class="jump-bottom" hidden>↓ New output</button>
+
+        <div id="composer-wrap">
+          <div id="slash-menu" class="slash-menu" hidden></div>
+          <div id="attachment-strip" class="attachment-strip" hidden></div>
+          <div class="composer">
+            <textarea id="input" rows="1" placeholder="Message Helm"></textarea>
+            <div class="composer-bottom">
+              <div class="composer-tools">
+                <button id="attach-files" class="icon-text" title="Add file or image"><span>＋</span> File</button>
+                <button id="mic" class="icon-text" title="Record with Whisper"><span>●</span> Mic</button>
+                <label class="select-wrap compact">
+                  <span>Model</span>
+                  <select id="chat-model"></select>
+                </label>
+                <button id="add-model" class="icon-btn" title="Add GGUF model">＋</button>
+                <label class="select-wrap compact">
+                  <span>Effort</span>
+                  <select id="effort">
+                    <option value="low">Low</option>
+                    <option value="medium" selected>Medium</option>
+                    <option value="high">High</option>
+                  </select>
+                </label>
+              </div>
+              <div class="send-group">
+                <span id="composer-hint">Enter to send · Shift+Enter for newline</span>
+                <button id="stop" class="stop" hidden>Stop</button>
+                <button id="send" class="send" title="Send">➤</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section id="agent-view" class="view">
+        <div class="hero-row">
+          <div>
+            <h2>Agents</h2>
+            <p>Create reusable local workers, task bots, and website crawlers.</p>
+          </div>
+          <button id="add-agent" class="primary">＋ Add task</button>
+        </div>
+        <div id="agent-grid" class="agent-grid"></div>
+
+        <div class="library-grid">
+          <article id="rag-panel" class="panel">
+            <div class="panel-head"><div><h3>RAG library</h3><p>Files available as retrieval context.</p></div><button id="add-rag" class="secondary">＋ Add files</button></div>
+            <div id="rag-list" class="resource-list"></div>
+          </article>
+          <article id="tools-panel" class="panel">
+            <div class="panel-head"><div><h3>AI tooling</h3><p>Built-in web, image, voice, document, and desktop adapters.</p></div><button id="open-tool-root" class="secondary">Open tools folder</button></div>
+            <div id="builtin-tool-list" class="tooling-list"></div>
+            <div class="panel-divider"></div>
+            <div class="panel-head compact-head"><div><h3>Imported tool packs</h3><p>Additional stdio-json tools.</p></div><button id="add-toolpack" class="secondary">＋ Import manifest</button></div>
+            <div id="toolpack-list" class="resource-list"></div>
+            <details class="manifest-help">
+              <summary>Manifest architecture</summary>
+              <code>{ "name": "tool-pack", "adapter": "stdio-json", "executable": "...", "tools": [...] }</code>
+            </details>
+          </article>
+        </div>
+      </section>
+    </main>
+  </div>
+
+  <div id="task-modal" class="modal" hidden>
+    <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="task-title">
+      <div class="modal-head"><div><h2 id="task-title">Add an agent task</h2><p>Choose a starting architecture. It can be extended later.</p></div><button id="close-task" class="icon-btn">×</button></div>
+
+      <div class="type-grid">
+        <button class="type-card selected" data-agent-type="local"><span class="type-icon">⌘</span><strong>Local</strong><small>Chat with a model that can inspect files and run computer tools.</small></button>
+        <button class="type-card" data-agent-type="task"><span class="type-icon">✓</span><strong>Task bot</strong><small>Upload a JSON/YAML configuration defining repeatable work.</small></button>
+        <button class="type-card" data-agent-type="webscraper"><span class="type-icon">◎</span><strong>Web scraper</strong><small>Give Helm a website to crawl locally with a bounded same-site job.</small></button>
+      </div>
+
+      <div class="form-grid">
+        <label><span>Name</span><input id="agent-name" value="Local operator" maxlength="80"></label>
+        <label><span>Model</span><select id="agent-model"></select></label>
+        <label id="agent-config-row" class="full" hidden><span>Task configuration</span><div class="file-choice"><button id="choose-agent-config" class="secondary">Choose config file</button><span id="agent-config-name">No file selected</span></div></label>
+        <label id="site-url-row" class="full" hidden><span>Starting website</span><input id="site-url" type="url" placeholder="https://example.com/docs"></label>
+        <fieldset class="full"><legend>RAG files</legend><div id="agent-rag-options" class="check-grid"></div></fieldset>
+      </div>
+
+      <div class="modal-actions"><button id="cancel-task" class="ghost">Cancel</button><button id="create-agent" class="primary">Create agent</button></div>
+    </div>
+  </div>
+
+
+  <div id="settings-modal" class="modal" hidden>
+    <div class="modal-card settings-card" role="dialog" aria-modal="true" aria-labelledby="settings-title">
+      <div class="modal-head"><div><h2 id="settings-title">Runtime settings</h2><p>Model memory, context, and local tool paths. Saving reloads the active model.</p></div><button id="close-settings" class="icon-btn">×</button></div>
+
+      <div class="preset-row">
+        <button class="secondary preset" data-preset="4090-fast">4090 Fast</button>
+        <button class="secondary preset" data-preset="4090-balanced">4090 Balanced</button>
+        <button class="secondary preset" data-preset="96gb-hybrid">96 GB Hybrid</button>
+      </div>
+
+      <h3 class="settings-section-title">Inference</h3>
+      <div class="form-grid settings-grid">
+        <label><span>Context size</span><input id="setting-n-ctx" type="number" min="512" max="1048576" step="512"></label>
+        <label><span>GPU layers</span><input id="setting-gpu-layers" type="number" min="-1" max="999"></label>
+        <label><span>Logical batch</span><input id="setting-batch" type="number" min="32" max="8192" step="32"></label>
+        <label><span>Physical batch</span><input id="setting-ubatch" type="number" min="32" max="8192" step="32"></label>
+        <label><span>CPU threads</span><input id="setting-threads" type="number" min="0" max="256"><small>0 = automatic</small></label>
+        <label><span>Batch threads</span><input id="setting-threads-batch" type="number" min="0" max="256"><small>0 = automatic</small></label>
+        <label><span>Flash Attention</span><select id="setting-flash"><option value="auto">Auto</option><option value="on">On</option><option value="off">Off</option></select></label>
+        <label><span>KV cache location</span><select id="setting-kv-location"><option value="vram">VRAM</option><option value="ram">System RAM</option></select></label>
+        <label><span>KV cache quantization</span><select id="setting-kv-type"><option value="f16">F16</option><option value="q8_0">Q8_0</option><option value="q4_0">Q4_0</option></select></label>
+      </div>
+
+      <h3 class="settings-section-title">Local AI tools</h3>
+      <div class="form-grid settings-grid">
+        <label class="full"><span>Tool root</span><input id="setting-tool-root" placeholder="F:\AI Tools"></label>
+        <label class="full"><span>ComfyUI URL</span><input id="setting-comfy-url" placeholder="http://127.0.0.1:8188"></label>
+        <label class="full"><span>ComfyUI API workflow</span><div class="inline-field"><input id="setting-comfy-workflow" placeholder="Choose an API-format workflow JSON"><button id="choose-comfy-workflow" class="secondary">Browse</button></div></label>
+      </div>
+      <div class="toggle-grid">
+        <label><input id="setting-web-tools" type="checkbox"> Web search</label>
+        <label><input id="setting-image-tools" type="checkbox"> ComfyUI images</label>
+        <label><input id="setting-voice-tools" type="checkbox"> Whisper + Piper</label>
+        <label><input id="setting-document-tools" type="checkbox"> Document extraction</label>
+        <label><input id="setting-desktop-tools" type="checkbox"> Desktop controls</label>
+        <label><input id="setting-compression" type="checkbox"> Conversation compression</label>
+      </div>
+      <div id="tool-detection" class="detection-grid"></div>
+
+      <h3 class="settings-section-title" id="memory-section">Long-term memory</h3>
+      <p class="settings-hint">Injected into every conversation, in both Chat and Agent mode. Add entries with <code>/remember</code>, remove them with <code>/forget</code>, or edit directly here. One fact per line.</p>
+      <textarea id="memory-text" class="memory-editor" spellcheck="false" placeholder="- Prefers concise answers with no preamble&#10;- Main dev box is a 14900K with a 4090"></textarea>
+      <div class="memory-foot"><span id="memory-meter" class="memory-meter">0 / 8192 bytes</span><button id="save-memory" class="ghost">Save memory</button></div>
+
+      <div class="modal-actions"><button id="cancel-settings" class="ghost">Cancel</button><button id="save-settings" class="primary">Save and reload</button></div>
+    </div>
+  </div>
+
+  <div id="toast-region" class="toast-region" aria-live="polite"></div>
+  <script src="markdown.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>

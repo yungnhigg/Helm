@@ -1,0 +1,14 @@
+{
+  "name": "Repository review bot",
+  "objective": "Review the attached repository for correctness, maintainability, and security.",
+  "steps": [
+    "Map the project structure",
+    "Inspect build and runtime entry points",
+    "Find high-impact defects",
+    "Return prioritized fixes with file references"
+  ],
+  "constraints": {
+    "modify_files": false,
+    "maximum_iterations": 8
+  }
+}

@@ -1,0 +1,95 @@
+{
+  // Helm copies this default to %LOCALAPPDATA%\Helm\app.json on first run.
+  // Add GGUF files from the UI or edit the user copy directly.
+  "active_model_id": "default",
+  "models": [
+    {
+      "id": "default",
+      "name": "Default local model",
+      "path": "C:\\models\\your-model-Q4_K_M.gguf"
+    }
+  ],
+  "model_path": "C:\\models\\your-model-Q4_K_M.gguf",
+
+  "n_ctx": 8192,
+  "n_gpu_layers": 999,
+  "n_batch": 512,
+  "n_ubatch": 512,
+  "n_threads": 0,
+  "n_threads_batch": 0,
+  "flash_attention": "auto",
+  "kv_cache_location": "vram",
+  "kv_cache_type": "f16",
+  "max_gen_tokens": 2048,
+  "max_agent_iterations": 8,
+  "ctx_reserve_tokens": 1024,
+
+  // Generic process execution. Off by default: crawled pages and RAG file text
+  // land in the same context as the tool grammar, so an unrestricted
+  // run_process turns fetched content into code execution. Turn it on when you
+  // want it, ideally with an allowlist.
+  "allow_process_tools": false,
+
+  // Full paths or bare filenames, case-insensitive. Empty array = no
+  // restriction (only reachable when allow_process_tools is true).
+  // e.g. ["makemkvcon64.exe", "C:\\Program Files\\HandBrake\\HandBrakeCLI.exe"]
+  "process_allowlist": [],
+
+  // When set, write_text_file refuses any destination outside this directory.
+  // Empty string = no restriction. Reads are not restricted.
+  // e.g. "C:\\helm-workspace"
+  "write_root": "",
+
+  // External tools installed by install_helm_tools.cmd. Every path can be
+  // overridden in %LOCALAPPDATA%\Helm\runtime.json through the Settings UI.
+  "tool_root": "F:\\AI Tools",
+  "tool_python": "",
+  "ffmpeg_exe": "",
+  "whisper_exe": "",
+  "whisper_model": "",
+  "piper_exe": "",
+  "piper_voice": "",
+  "comfyui_url": "http://127.0.0.1:8188",
+  "comfyui_workflow": "",
+  "enable_web_tools": true,
+  "enable_image_tools": true,
+  "enable_voice_tools": true,
+  "enable_document_tools": true,
+  "enable_desktop_tools": true,
+  "enable_compression": true,
+  "compress_keep_recent": 8,
+  "compress_summary_tokens": 448,
+
+  // Prompt envelope. "chatml" is the only format implemented; gpt-oss needs
+  // OpenAI's Harmony format and will not tool-call correctly under chatml.
+  "prompt_format": "chatml",
+  // Optional "thinking" field on model output, shown collapsed in the UI.
+  "enable_thinking": true,
+
+  // Global long-term memory, injected into every system prompt.
+  // Add with /remember, remove with /forget, edit in Settings.
+  "enable_memory": true,
+  "memory_budget_bytes": 8192,
+
+  "system_prompt": "You are Helm, a capable assistant running locally on this machine. Be direct and accurate. In agent mode, inspect before modifying, use tools only when they help, and summarize material actions. Never expose private chain-of-thought; provide conclusions and useful working details instead.",
+  "stop_strings": ["<|im_end|>"],
+
+  "template": {
+    "system_prefix": "<|im_start|>system\n",
+    "system_suffix": "<|im_end|>\n",
+    "user_prefix": "<|im_start|>user\n",
+    "user_suffix": "<|im_end|>\n",
+    "assistant_prefix": "<|im_start|>assistant\n",
+    "assistant_suffix": "<|im_end|>\n",
+    "tool_result_role": "user",
+    "tool_result_open": "<tool_result>",
+    "tool_result_close": "</tool_result>"
+  },
+
+  "sampling": {
+    "temperature": 0.7,
+    "top_k": 40,
+    "min_p": 0.05,
+    "seed": 4294967295
+  }
+}
