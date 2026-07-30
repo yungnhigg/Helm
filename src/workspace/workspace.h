@@ -48,6 +48,8 @@ public:
     std::vector<AgentProfile> agents() const;
     AgentProfile create_agent(const nlohmann::json& j);
     bool remove_agent(const std::string& id);
+    // Renames in place; returns false if the agent id does not exist.
+    bool rename_agent(const std::string& id, const std::string& new_name);
     bool get_agent(const std::string& id, AgentProfile& out) const;
 
     std::string context_for(const std::vector<std::string>& ids, const std::string& query,

@@ -163,6 +163,19 @@ bool WorkspaceStore::remove_agent(const std::string& id) {
     return true;
 }
 
+bool WorkspaceStore::rename_agent(const std::string& id, const std::string& new_name) {
+    const std::string trimmed = new_name.substr(0, 80);
+    if (trimmed.empty()) return false;
+    std::lock_guard lk(m_);
+    for (auto& a : agents_) {
+        if (a.id != id) continue;
+        a.name = trimmed;
+        persist_locked();
+        return true;
+    }
+    return false;
+}
+
 bool WorkspaceStore::get_agent(const std::string& id, AgentProfile& out) const {
     std::lock_guard lk(m_);
     auto it = std::find_if(agents_.begin(), agents_.end(), [&](const auto& a) { return a.id == id; });

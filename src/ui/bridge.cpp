@@ -507,6 +507,12 @@ void Bridge::on_web_message(const std::wstring& raw) {
         if (loop_.has_in_flight_work()) { emit({{"type", "error"}, {"message", "finish or cancel active turns and jobs before deleting agents"}}); return; }
         workspace_.remove_agent(j.value("id", "")); send_workspace(); return;
     }
+    if (type == "rename_agent") {
+        const bool ok = workspace_.rename_agent(j.value("id", ""), j.value("name", ""));
+        if (!ok) { emit({{"type", "error"}, {"message", "could not rename agent: empty name or unknown id"}}); return; }
+        send_workspace();
+        return;
+    }
     // Opening an agent only created a session; something still had to type into
     // it. An agent that needs prompting every time is not autonomous, so this
     // opens the session and immediately drives the first turn from the agent's

@@ -98,6 +98,12 @@ const handlers = {
   workspace(message) {
     state.agents = Array.isArray(message.agents) ? message.agents : [];
     state.resources = Array.isArray(message.resources) ? message.resources : [];
+    // A rename while the agent is open must refresh the held reference too, or
+    // the banner/title keeps showing the name from when it was opened.
+    if (state.activeAgent) {
+      const fresh = state.agents.find(a => a.id === state.activeAgent.id);
+      if (fresh) { state.activeAgent = fresh; syncComposerAgent(); }
+    }
     renderAgents();
     renderResources();
     renderAgentRagOptions();
@@ -510,11 +516,25 @@ function renderAgents() {
     loop.textContent = '\u221E Loop';
     loop.title = 'Run forever: fresh context each batch, dedup on disk. Stop from the top bar.';
     loop.onclick = () => { post({ type: 'run_agent', id: agent.id, perpetual: true, effort: $('effort')?.value || 'high' }); const b=$('stop-agent'); if(b) b.hidden=false; };
+    const rename = document.createElement('button');
+    rename.className = 'ghost';
+    rename.textContent = 'Rename';
+    rename.title = 'Rename this agent';
+    rename.onclick = () => {
+      const next = prompt('Rename agent', agent.name);
+      if (next === null) return;             // cancelled
+      const trimmed = next.trim();
+      if (!trimmed || trimmed === agent.name) return;
+      post({ type: 'rename_agent', id: agent.id, name: trimmed });
+    };
     const remove = document.createElement('button');
     remove.className = 'ghost';
     remove.textContent = 'Delete';
-    remove.onclick = () => post({ type: 'delete_agent', id: agent.id });
-    actions.append(run, loop, open, remove);
+    remove.onclick = () => {
+      if (!confirm(`Delete "${agent.name}"? This cannot be undone.`)) return;
+      post({ type: 'delete_agent', id: agent.id });
+    };
+    actions.append(run, loop, open, rename, remove);
     card.append(head, actions);
     grid.append(card);
   }
