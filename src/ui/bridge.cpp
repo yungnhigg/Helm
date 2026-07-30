@@ -503,6 +503,50 @@ void Bridge::on_web_message(const std::wstring& raw) {
         emit({{"type", "agent_created"}, {"id", a.id}});
         return;
     }
+    if (type == "remove_model") {
+        const std::string id = j.value("id", "");
+        const bool delete_file = j.value("delete_file", false);
+        std::string path;
+        for (const auto& m : cfg_.models) if (m.id == id) { path = m.path; break; }
+        if (path.empty() && !id.empty()) {
+            emit({{"type", "error"}, {"message", "model not found in catalog"}});
+            return;
+        }
+        if (eng_.loaded() && cfg_.active_model_id == id) {
+            emit({{"type", "error"}, {"message", "unload this model before removing it"}});
+            return;
+        }
+        const bool removed = cfg_.remove_model(id);
+        if (delete_file && !path.empty()) {
+            namespace fs = std::filesystem;
+            std::error_code ec;
+            fs::remove(utf8_to_wide(path), ec);
+            if (ec) log("failed to delete model file: " + path + " (" + ec.message() + ")");
+        }
+        send_models();
+        emit({{"type", "note"}, {"text", removed
+            ? (delete_file ? "Model removed and file deleted." : "Model removed from the list. File left on disk.")
+            : "Model was not in the catalog."}});
+        return;
+    }
+    if (type == "hardware_info") {
+        // Best-effort detection so Settings can propose presets scaled to the
+        // machine actually running Helm, not just the developer's 4090/96GB
+        // rig. Both calls are non-fatal: if either fails, the field is 0 and
+        // the frontend falls back to a conservative default.
+        long long vram_mb = 0;
+        {
+            auto r = run_process_capture(L"nvidia-smi",
+                {L"--query-gpu=memory.total", L"--format=csv,noheader,nounits"}, L"", 5, nullptr);
+            if (r.exit_code == 0) {
+                try { vram_mb = std::stoll(r.output); } catch (...) {}
+            }
+        }
+        MEMORYSTATUSEX mem{}; mem.dwLength = sizeof(mem);
+        long long ram_mb = GlobalMemoryStatusEx(&mem) ? static_cast<long long>(mem.ullTotalPhys / (1024 * 1024)) : 0;
+        emit({{"type", "hardware_info"}, {"vram_mb", vram_mb}, {"ram_mb", ram_mb}});
+        return;
+    }
     if (type == "delete_agent") {
         if (loop_.has_in_flight_work()) { emit({{"type", "error"}, {"message", "finish or cancel active turns and jobs before deleting agents"}}); return; }
         workspace_.remove_agent(j.value("id", "")); send_workspace(); return;

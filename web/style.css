@@ -519,3 +519,12 @@ fieldset { margin: 0; padding: 0; border: 0; }
 
 .perm-hint { margin: 8px 2px 0; color: var(--muted); font-size: 10px; line-height: 1.5; }
 .perm-preset.selected { background: var(--accent-soft); border-color: rgba(239,35,60,.45); }
+
+.model-manage-list { display: flex; flex-direction: column; gap: 6px; margin: 4px 0 14px; }
+.model-manage-row { display: flex; align-items: center; justify-content: space-between; gap: 12px;
+  padding: 9px 11px; border: 1px solid var(--line); border-radius: 8px; background: #232329; }
+.model-manage-info { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.model-manage-info strong { font-size: 12px; }
+.model-manage-info small { color: var(--muted); font-size: 10px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 420px; }
+.model-manage-controls { display: flex; align-items: center; gap: 10px; flex: 0 0 auto; }
+.model-manage-delfile { display: flex; align-items: center; gap: 5px; font-size: 10.5px; color: var(--muted); white-space: nowrap; }

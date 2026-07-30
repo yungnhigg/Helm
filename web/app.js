@@ -9,6 +9,7 @@ const state = {
   sessions: [],
   models: [],
   activeModel: '',
+  hardware: { vram_mb: 0, ram_mb: 0 },
   modelLoaded: false,
   busy: false,
   agents: [],
@@ -61,10 +62,24 @@ const handlers = {
     $('model-status-text').textContent = 'Loading model…';
   },
 
+  hardware_info(message) {
+    state.hardware = { vram_mb: message.vram_mb || 0, ram_mb: message.ram_mb || 0 };
+    const el = $('hw-detected');
+    if (!el) return;
+    if (!state.hardware.vram_mb && !state.hardware.ram_mb) {
+      el.textContent = 'Could not detect GPU/RAM automatically. Presets below use conservative defaults \u2014 adjust manually below if needed.';
+      return;
+    }
+    const gb = mb => (mb / 1024).toFixed(mb % 1024 === 0 ? 0 : 1);
+    el.textContent = `Detected ${gb(state.hardware.vram_mb)} GB VRAM, ${gb(state.hardware.ram_mb)} GB system RAM. `
+      + 'Presets below are scaled to this machine.';
+  },
+
   models(message) {
     state.models = Array.isArray(message.list) ? message.list : [];
     state.activeModel = message.active || state.activeModel;
     renderModels();
+    renderModelManageList();
   },
 
   model_added(message) {
@@ -1110,6 +1125,8 @@ function openSettings(section) {
   $('settings-modal').hidden = false;
   post({ type: 'get_settings' });
   post({ type: 'get_memory' });
+  post({ type: 'hardware_info' });
+  renderModelManageList();
   if (section === 'memory') {
     setTimeout(() => {
       const el = $('memory-section');
@@ -1165,13 +1182,88 @@ function renderDetection() {
   }
 }
 
-function applyPreset(name) {
-  const presets = {
-    '4090-fast': { n_ctx: 8192, n_gpu_layers: 999, n_batch: 1024, n_ubatch: 512, n_threads: 0, n_threads_batch: 0, flash: 'on', kv_location: 'vram', kv_type: 'f16' },
-    '4090-balanced': { n_ctx: 32768, n_gpu_layers: 999, n_batch: 1024, n_ubatch: 512, n_threads: 0, n_threads_batch: 0, flash: 'on', kv_location: 'vram', kv_type: 'q8_0' },
-    '96gb-hybrid': { n_ctx: 65536, n_gpu_layers: 999, n_batch: 512, n_ubatch: 256, n_threads: 0, n_threads_batch: 0, flash: 'on', kv_location: 'ram', kv_type: 'q8_0' }
+// Presets scaled to the detected machine, instead of hardcoded for one 4090 /
+// 96GB rig. Deriving an absolute "context that fits" number would require
+// knowing the loaded model's weight size, which is not known at Settings-open
+// time (no model may be selected yet) - guessing that produces a context that
+// looks fine here and OOMs the instant real weights load alongside it.
+// Instead, scale the THREE VALUES THAT ARE KNOWN TO WORK on the reference
+// 4090 (24GB) / 96GB machine by the ratio of the user's actual hardware to
+// that reference, clamped to sane floors and ceilings. Less precise, but it
+// cannot recommend a number that ignores weight size, and it degrades toward
+// the reference numbers (not zero) when detection fails.
+function computePresets() {
+  const refVramMb = 24576;   // reference: RTX 4090
+  const refRamMb = 98304;    // reference: 96GB system
+  const vramMb = state.hardware?.vram_mb || refVramMb;
+  const ramMb = state.hardware?.ram_mb || refRamMb;
+  const vramRatio = Math.max(0.15, Math.min(2.5, vramMb / refVramMb));
+  const ramRatio = Math.max(0.15, Math.min(2.5, ramMb / refRamMb));
+  const roundKto = (n, step) => Math.max(step, Math.round(n / step) * step);
+  const fastCtx     = roundKto(8192  * vramRatio, 1024);
+  const balancedCtx = roundKto(32768 * vramRatio, 2048);
+  const hybridCtx   = roundKto(65536 * ramRatio,  4096);
+  return {
+    fast:     { n_ctx: fastCtx,     n_gpu_layers: 999, n_batch: 1024, n_ubatch: 512, n_threads: 0, n_threads_batch: 0, flash: 'on', kv_location: 'vram', kv_type: 'f16' },
+    balanced: { n_ctx: balancedCtx, n_gpu_layers: 999, n_batch: 1024, n_ubatch: 512, n_threads: 0, n_threads_batch: 0, flash: 'on', kv_location: 'vram', kv_type: 'q8_0' },
+    hybrid:   { n_ctx: hybridCtx,   n_gpu_layers: 999, n_batch: 512,  n_ubatch: 256, n_threads: 0, n_threads_batch: 0, flash: 'on', kv_location: 'ram',  kv_type: 'q8_0' },
   };
-  const v = presets[name];
+}
+
+
+// "Installed models" pane in Settings. Solves the case where a model file was
+// deleted by hand outside Helm (Explorer, disk cleanup) and now sits as a
+// dead entry pointing at a missing path - remove clears the catalog entry.
+// The optional checkbox also deletes the file itself, so removing a model
+// Helm still has on disk is a single action instead of hunting the path down
+// in Explorer separately.
+function renderModelManageList() {
+  const box = $('model-manage-list');
+  if (!box) return;
+  box.replaceChildren();
+  if (!state.models.length) {
+    const empty = document.createElement('p');
+    empty.className = 'perm-hint';
+    empty.textContent = 'No models added yet. Use "Add model" above to browse for a GGUF file.';
+    box.append(empty);
+    return;
+  }
+  for (const m of state.models) {
+    const row = document.createElement('div');
+    row.className = 'model-manage-row';
+    const info = document.createElement('div');
+    info.className = 'model-manage-info';
+    const name = document.createElement('strong');
+    name.textContent = m.name || m.id;
+    const path = document.createElement('small');
+    path.textContent = m.path || '';
+    info.append(name, path);
+    const controls = document.createElement('div');
+    controls.className = 'model-manage-controls';
+    const delFileLabel = document.createElement('label');
+    delFileLabel.className = 'model-manage-delfile';
+    const delFileCb = document.createElement('input');
+    delFileCb.type = 'checkbox';
+    delFileLabel.append(delFileCb, document.createTextNode(' also delete file'));
+    const remove = document.createElement('button');
+    remove.className = 'ghost';
+    remove.textContent = 'Remove';
+    remove.onclick = () => {
+      const deleteFile = delFileCb.checked;
+      const msg = deleteFile
+        ? `Remove "${m.name}" and permanently delete the file from disk?`
+        : `Remove "${m.name}" from the list? The file stays on disk.`;
+      if (!confirm(msg)) return;
+      post({ type: 'remove_model', id: m.id, delete_file: deleteFile });
+    };
+    controls.append(delFileLabel, remove);
+    row.append(info, controls);
+    box.append(row);
+  }
+}
+
+function applyPreset(name) {
+  const v = computePresets()[name];
   if (!v) return;
   $('setting-n-ctx').value = v.n_ctx;
   $('setting-gpu-layers').value = v.n_gpu_layers;

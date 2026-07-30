@@ -166,10 +166,11 @@
     <div class="modal-card settings-card" role="dialog" aria-modal="true" aria-labelledby="settings-title">
       <div class="modal-head"><div><h2 id="settings-title">Runtime settings</h2><p>Model memory, context, and local tool paths. Saving reloads the active model.</p></div><button id="close-settings" class="icon-btn">×</button></div>
 
-      <div class="preset-row">
-        <button class="secondary preset" data-preset="4090-fast">4090 Fast</button>
-        <button class="secondary preset" data-preset="4090-balanced">4090 Balanced</button>
-        <button class="secondary preset" data-preset="96gb-hybrid">96 GB Hybrid</button>
+      <p id="hw-detected" class="perm-hint">Detecting your hardware…</p>
+      <div class="preset-row" id="preset-row">
+        <button class="secondary preset" data-preset="fast">Fast</button>
+        <button class="secondary preset" data-preset="balanced">Balanced</button>
+        <button class="secondary preset" data-preset="hybrid">Hybrid</button>
       </div>
 
       <h3 class="settings-section-title">Inference</h3>
@@ -184,6 +185,9 @@
         <label><span>KV cache location</span><select id="setting-kv-location"><option value="vram">VRAM</option><option value="ram">System RAM</option></select></label>
         <label><span>KV cache quantization</span><select id="setting-kv-type"><option value="f16">F16</option><option value="q8_0">Q8_0</option><option value="q4_0">Q4_0</option></select></label>
       </div>
+
+      <h3 class="settings-section-title">Installed models</h3>
+      <div id="model-manage-list" class="model-manage-list"></div>
 
       <h3 class="settings-section-title">Local AI tools</h3>
       <div class="form-grid settings-grid">
