@@ -59,6 +59,9 @@ private:
 // The two that can touch the machine take the config so their limits come from
 // one place instead of being baked into the tool body.
 void register_tool_time(Registry&);
+// Always registered. task_complete must exist in the registry or the grammar
+// forbids the token sequence and an autonomous run has no reachable exit.
+void register_run_control(Registry&);
 void register_tool_dice(Registry&);
 void register_tool_demo_job(Registry&);
 void register_tool_files(Registry&, const Config&);
