@@ -26,6 +26,11 @@ struct TurnOptions {
     std::string effort = "medium";   // low | medium | high
     std::string agent_id;
     std::vector<std::string> resource_ids;
+    // Autonomous run. A plain reply is progress, not a finish line: the loop
+    // keeps driving until the model calls task_complete or the iteration budget
+    // is spent. Prompting a model not to stop does not work, because the C++
+    // returns on a reply no matter what the model was told.
+    bool autonomous = false;
 };
 
 class AgentLoop {

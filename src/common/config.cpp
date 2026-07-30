@@ -28,6 +28,10 @@ static void load_runtime_fields(const json& j, Config& c) {
     c.whisper_model = j.value("whisper_model", c.whisper_model);
     c.piper_exe = j.value("piper_exe", c.piper_exe);
     c.piper_voice = j.value("piper_voice", c.piper_voice);
+    c.max_autonomous_iterations = std::clamp(j.value("max_autonomous_iterations", c.max_autonomous_iterations), 4, 400);
+    c.write_root = j.value("write_root", c.write_root);
+    c.archive_db = j.value("archive_db", c.archive_db);
+    c.archive_shards = j.value("archive_shards", c.archive_shards);
     c.comfyui_url = j.value("comfyui_url", c.comfyui_url);
     c.comfyui_workflow = j.value("comfyui_workflow", c.comfyui_workflow);
     c.enable_web_tools = j.value("enable_web_tools", c.enable_web_tools);
@@ -35,6 +39,7 @@ static void load_runtime_fields(const json& j, Config& c) {
     c.enable_voice_tools = j.value("enable_voice_tools", c.enable_voice_tools);
     c.enable_document_tools = j.value("enable_document_tools", c.enable_document_tools);
     c.enable_desktop_tools = j.value("enable_desktop_tools", c.enable_desktop_tools);
+    c.enable_archive_tools = j.value("enable_archive_tools", c.enable_archive_tools);
     c.enable_compression = j.value("enable_compression", c.enable_compression);
     c.compress_keep_recent = std::clamp(j.value("compress_keep_recent", c.compress_keep_recent), 2, 64);
     c.compress_summary_tokens = std::clamp(j.value("compress_summary_tokens", c.compress_summary_tokens), 64, 4096);
@@ -178,10 +183,14 @@ void Config::persist_runtime_settings() const {
         {"tool_root", tool_root}, {"tool_python", tool_python}, {"ffmpeg_exe", ffmpeg_exe},
         {"whisper_exe", whisper_exe}, {"whisper_model", whisper_model},
         {"piper_exe", piper_exe}, {"piper_voice", piper_voice},
+        {"max_autonomous_iterations", max_autonomous_iterations},
+        {"write_root", write_root},
+        {"archive_db", archive_db}, {"archive_shards", archive_shards},
         {"comfyui_url", comfyui_url}, {"comfyui_workflow", comfyui_workflow},
         {"enable_web_tools", enable_web_tools}, {"enable_image_tools", enable_image_tools},
         {"enable_voice_tools", enable_voice_tools}, {"enable_document_tools", enable_document_tools},
         {"enable_desktop_tools", enable_desktop_tools},
+        {"enable_archive_tools", enable_archive_tools},
         {"enable_compression", enable_compression},
         {"compress_keep_recent", compress_keep_recent}, {"compress_summary_tokens", compress_summary_tokens}
     };

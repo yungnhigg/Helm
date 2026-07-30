@@ -120,13 +120,19 @@ button { border: 1px solid transparent; }
 #workspace { min-width: 0; min-height: 0; display: flex; flex-direction: column; }
 #topbar {
   height: 68px; flex: 0 0 auto; display: flex; align-items: center; justify-content: space-between;
-  padding: 0 24px; border-bottom: 1px solid var(--line-strong);
-  /* Near-solid black rather than a translucent tint: the gradient behind it bled
-     through and left the bar looking washed out against the transcript. */
-  background: #050506;
-  backdrop-filter: blur(20px);
+  padding: 0 24px;
+  /* Flat pure black with a hard edge. The previous value was a translucent tint
+     that resolved to roughly #0c0c0f over this background, so darkening it by a
+     few points changed nothing visible. This is unambiguously a darker bar. */
+  background: #000;
+  border-bottom: 1px solid rgba(255,255,255,.10);
+  box-shadow: 0 1px 0 rgba(0,0,0,.9), 0 6px 18px rgba(0,0,0,.45);
+  backdrop-filter: none;
 }
-#topbar .page-heading p { color: var(--dim); }
+#topbar #page-title { color: #f2f2f5; }
+#topbar .page-heading p { color: #6b6b75; }
+#topbar .icon-btn { background: #121216; border-color: rgba(255,255,255,.09); }
+#topbar .model-status { background: #0c0c10; border-color: rgba(255,255,255,.08); }
 .page-heading { display: flex; align-items: center; gap: 8px; }
 .page-heading h1 { margin: 0; font-size: 18px; font-weight: 650; letter-spacing: -.25px; }
 .page-heading p { margin: 2px 0 0; color: var(--muted); font-size: 11px; }

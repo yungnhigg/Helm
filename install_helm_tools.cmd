@@ -1,6 +1,6 @@
 @echo off
 setlocal EnableExtensions EnableDelayedExpansion
-title Helm 1.4.3 AI Tools Installer
+title Helm 1.4.5 AI Tools Installer
 
 rem Tool root. Pass a path as the first argument to override; it must match
 rem the "Tool root" value in Helm Settings.
@@ -12,7 +12,7 @@ set "SDXL_MODEL=%ROOT%\ComfyUI\models\checkpoints\sd_xl_base_1.0.safetensors"
 
 echo.
 echo ============================================================
-echo  HELM 1.4.3 AI TOOLS INSTALLER
+echo  HELM 1.4.5 AI TOOLS INSTALLER
 echo  Tools and models will be installed under:
 echo  %ROOT%
 echo ============================================================
@@ -118,7 +118,8 @@ if not exist "%ROOT%\ComfyUI\.venv\Scripts\python.exe" (
   if errorlevel 1 goto :failed
 )
 call "%ROOT%\ComfyUI\.venv\Scripts\activate.bat"
-python -m pip install --upgrade pip setuptools wheel
+rem torch pins setuptools<82; upgrading it here guarantees a conflict on install.
+python -m pip install --upgrade pip wheel
 if errorlevel 1 goto :failed_active
 python -m pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu128
 if errorlevel 1 goto :failed_active
@@ -180,6 +181,10 @@ if not defined CMAKE_EXE (
   echo          but whisper.cpp could not be compiled.
 ) else (
   echo Using CMake: "!CMAKE_EXE!"
+  rem CMake stamps generator and platform into the cache on first configure and
+  rem then refuses to reconfigure that directory. One interrupted run poisons it
+  rem permanently, so this always starts clean.
+  if exist "%ROOT%\whisper.cpp\build\CMakeCache.txt" rmdir /s /q "%ROOT%\whisper.cpp\build"
   "!CMAKE_EXE!" -S "%ROOT%\whisper.cpp" -B "%ROOT%\whisper.cpp\build" ^
     -G "Visual Studio 17 2022" -A x64 ^
     -DGGML_CUDA=ON -DCMAKE_CUDA_ARCHITECTURES=89 ^

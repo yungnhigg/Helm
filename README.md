@@ -1,179 +1,169 @@
-# Helm 1.x
+# Helm 1.2 merged source
 
-A native Windows local-AI workspace. One process, one window, one binary.
-C++20, Win32, WebView2, and llama.cpp linked in-process — no model server, no
-interpreter in the runtime, no background service.
+Helm is a native Windows local-AI workspace built with C++20, llama.cpp, Win32,
+and WebView2. This archive merges the stable patched runtime/UI branch with the
+1.2 tooling revision and the later inference-memory and streaming-scroll changes.
 
-The model runs on the graphics card and can be unloaded without closing the
-app, so the card is free for a game while the window stays open.
+## What is merged
 
----
+- Saved conversations, Chat / Agent modes, GGUF model selection, effort controls,
+  attachments, RAG files, local/task/web-scraper agents, and imported stdio-json
+  tool packs.
+- Built-in 1.2 adapters for current web search, ComfyUI image generation, Whisper
+  microphone transcription, Piper speech, PDF/DOCX/XLSX/PPTX extraction, desktop
+  screenshots, clicking, typing, and hotkeys.
+- A microphone button at the end of the composer. WebView2 grants microphone
+  access only to Helm's private `https://app.local` UI origin; the recording is
+  converted locally with FFmpeg and transcribed locally with whisper.cpp.
+- Runtime settings for context size, GPU layers, logical and physical batches,
+  CPU threads, Flash Attention, KV-cache location, and F16/Q8_0/Q4_0 KV cache.
+- Presets for a fast RTX 4090 setup, a larger-context balanced 4090 setup, and a
+  96 GB system-RAM hybrid setup.
+- Streaming that follows new tokens only while the transcript is already near the
+  bottom. Scrolling upward stays put, and a **New output** button returns to live
+  output.
+- The full registered tool set is callable from both Chat and Agent modes. Agent
+  mode adds reusable profiles, task instructions, and multi-step worker behavior.
+- Tool detection and enable/disable controls under the gear menu and Agent → AI
+  Tooling.
+
+## Source layout
+
+```text
+src/main.cpp                  Win32/WebView2 host and microphone permission
+src/ui/bridge.*               validated UI/core bridge, settings, transcription
+src/engine/                   llama.cpp model/context runtime
+src/agent/                    prompt, tool grammar, loop, cancellable jobs
+src/session/                  saved conversations
+src/workspace/                agents, RAG, attachments, imported tool packs
+src/tools/external_tools.*    native process boundary for 1.2 tool adapters
+tools_runtime/helm_tools.py   web, ComfyUI, documents, and desktop helper
+web/                          Windows 11-style UI
+config/app.json               immutable first-run defaults
+install_helm_tools.cmd        installs the optional stack under F:\AI Tools
+```
 
 ## Build
 
-CUDA is not optional in practice, and a build without it fails silently: it
-compiles, links, loads a model, and runs entirely on the CPU with no error
-anywhere. Always configure with the flags.
+Requirements:
 
+- Windows 11 or current Windows 10
+- Visual Studio with **Desktop development with C++**
+- CMake 3.24+
+- Git
+- WebView2 Runtime
+- CUDA toolkit for the NVIDIA build
+
+From an x64 Native Tools terminal:
+
+```powershell
+cmake -B build -S . -DGGML_CUDA=ON -DCMAKE_CUDA_ARCHITECTURES=89
+cmake --build build --config Release --parallel 1
+ctest --test-dir build -C Release --output-on-failure
 ```
-cmake -S . -B build -DGGML_CUDA=ON -DCMAKE_CUDA_ARCHITECTURES=89
-cmake --build build --config Release
+
+The `--parallel 1` build is intentional for machines that hit Windows error 5
+while many CUDA template compiler processes write into the same build tree.
+
+Output:
+
+```text
+build\Release\Helm.exe
+build\Release\web\
+build\Release\config\
+build\Release\tools_runtime\
+build\Release\install_helm_tools.cmd
 ```
 
-`89` is Ada (RTX 4090). Blackwell (RTX PRO 5000, 5090) is `120`, Ampere `86`.
+## Set up the optional tools
 
-Delete `build\CMakeCache.txt` before reconfiguring **only** when switching
-backend or CUDA architecture — stale toolchain detection survives otherwise.
-It is not needed routinely; `-D` flags override cached values.
+Run this from the source folder or beside `Helm.exe`:
 
-Output lands in `build\Release\`. The post-build step copies `web`, `config`,
-`tools_runtime`, and `install_helm_tools.cmd` next to the executable.
-
-### Prerequisites
-
-| | |
-|---|---|
-| Visual Studio 2022+ | Desktop development with C++ workload |
-| CUDA Toolkit | Install after Visual Studio so it detects the compiler |
-| Git | llama.cpp is fetched at configure time |
-| Disk | ~30 GB for build artifacts, before model files |
-
-llama.cpp is pinned by tag in `CMakeLists.txt`. Updating is a deliberate act:
-change the tag, rebuild, fix `engine/` if `llama.h` moved.
-
----
-
-## External tools
-
-Web search, image generation, speech, and document reading shell out to a
-Python runtime that lives outside the repo. Without it those tools report a
-missing runtime and everything else still works.
-
-```
+```text
 install_helm_tools.cmd
-install_helm_tools.cmd "D:\AI Tools"    :: custom root
 ```
 
-Run from Command Prompt, not PowerShell. Needs `git`, `curl.exe`, and the `py`
-launcher on PATH. First run is 30–60 minutes and ~20 GB: a Python venv,
-headless Chromium, ComfyUI with its own CUDA torch stack, an SDXL checkpoint,
-whisper.cpp compiled with CUDA, a Piper voice, FFmpeg, ripgrep, yt-dlp.
+It installs the shared helper environment, Playwright browsers, ComfyUI,
+whisper.cpp plus an English model, Piper plus an English voice, FFmpeg, yt-dlp,
+and ripgrep under `F:\AI Tools`. ComfyUI model weights are intentionally not
+included; add your chosen checkpoint and export an API-format workflow JSON,
+then select that workflow in Helm's gear menu.
 
-The root must match **Tool root** in Settings. The detection chips there show
-what actually installed — check them before assuming a tool is broken.
+The tool-root path and individual executable overrides live in:
 
----
-
-## Layout
-
-Nine layers, one process. Each talks only to its neighbours, so any one can be
-replaced without disturbing the rest.
-
-```
-src/
-  main.cpp        Win32 entry, window, message pump
-  ui/             bridge between the web view and the core
-  engine/         llama.cpp wrapper, sampling, GBNF grammar
-  agent/          loop, tool registry, prompt builders, job manager
-  session/        conversations, long-term memory
-  workspace/      RAG files, agent profiles, imported tool packs
-  tools/          one file per tool
-  common/         config, logging, paths, JSON
-web/              interface — HTML/CSS/JS, no build step
-config/app.json   shipped defaults, copied to the user directory on first run
-tools_runtime/    Python adapter for the external tools
+```text
+%LOCALAPPDATA%\Helm\runtime.json
 ```
 
-State lives in `%LOCALAPPDATA%\Helm`: `app.json`, `models.json`,
-`runtime.json`, `memory.md`, `sessions\`, `workspace\`, `generated\`,
-`helm.log`. Deleting that directory resets the app without touching the build.
+The UI writes this file. It does not overwrite the shipped `config\app.json`.
 
----
+## Models and memory settings
 
-## How a turn works
+Use the **+** button beside the model selector to add a GGUF. Helm stores the
+reference instead of copying the model. Saving runtime settings unloads and
+reloads the active model so the new context/KV configuration takes effect.
 
-The model's output is constrained by a GBNF grammar to exactly one of two
-byte-exact JSON envelopes:
+Preset intent:
 
-```
-{"type":"reply","thinking":"...","content":"..."}
-{"type":"tool_call","thinking":"...","note":"...","name":"...","arguments":{...}}
-```
+- **4090 Fast:** 8K context, full GPU offload, F16 KV in VRAM.
+- **4090 Balanced:** 32K context, full GPU offload, Q8_0 KV in VRAM.
+- **96 GB Hybrid:** 64K context, full GPU model offload, Q8_0 KV in system RAM. Lower GPU layers manually when the model itself does not fit.
 
-Malformed calls are impossible rather than merely unlikely — the sampler
-forbids any token that would produce one. `thinking` streams to a collapsible
-pane and is never persisted; feeding reasoning back compounds across turns and
-crowds out real history. `note` exists because a reply *ends the turn*: without
-it, a model that wanted to narrate before acting had to stop in order to do it.
+The exact usable context still depends on the GGUF architecture, quantization,
+VRAM use, and backend support. Lower context, use Q8_0/Q4_0 KV, or move KV to
+RAM when allocation fails.
 
-**GPT-OSS models are driven in native Harmony instead.** The format is detected
-from the weights at load — watch for `prompt=harmony` in the log — and the
-grammar is dropped, because constraining a model to an envelope it was not
-trained on wastes the reasoning it does natively. Analysis, commentary, and
-final channels route to the same thinking/note/reply panes. The model's own
-analysis trace is preserved across a tool chain and discarded once a final
-answer closes it.
+## RAG and attachments
 
-### Tools
+Text/source files are ranked locally and inserted as bounded context. PDF, DOCX,
+XLSX, and PPTX files are extracted through the local helper and cached beside
+the imported workspace copy. Images remain attachments/metadata unless a model
+or future multimodal adapter can consume them.
 
-Two classes. **Synchronous** tools return a value and the turn continues in the
-same breath. **Jobs** return an id immediately, report progress on their own
-channel, and notify the loop on completion — a rip or a crawl occupies a slot
-for many minutes while the window stays responsive.
+## Safety boundaries
 
-Built in: `read_text_file`, `write_text_file`, `list_directory`, `run_process`,
-`remember`, `recall_memory`, `forget`.
+- Navigation and WebView messages are restricted to `https://app.local`.
+- Microphone permission is granted only to that local UI origin.
+- External tools run as argument arrays, not arbitrary shell command strings.
+- Tool jobs have cancellation and timeouts.
+- `run_process` remains disabled by default and supports an executable allowlist.
+- Desktop controls are separately switchable in Settings.
 
-Via the Python runtime: `search_web`, `fetch_web_page`, `crawl_site`,
-`extract_document`, `generate_image`, `speak_text`, `desktop_screenshot`,
-`desktop_click`, `desktop_type`, `desktop_hotkey`.
+## Verification in this archive
 
-Web research escalates on its own. A static fetch that comes back thin or
-carries a "requires JavaScript" marker is retried through headless Chromium.
-One browser is launched per tool call and shared, escalation is capped, and the
-whole search sits under a time budget — otherwise three JS-rendered results
-stack three full browser lifecycles end to end and the tool looks hung.
+- JavaScript syntax checked with Node.
+- HTML IDs and local asset references checked.
+- Default and example JSON parsed.
+- Python helper byte-compiled.
+- Portable grammar and stream-filter C++ tests compiled and run.
 
-### Memory and compression
+A complete Windows/WebView2/CUDA compile must still be run on the target Windows
+machine because this archive was assembled in a Linux container without the
+Windows SDK or MSVC.
 
-`memory.md` is one Markdown file injected into every system prompt, in both
-modes. Writes are explicit — `/remember`, `/forget`, the `remember` tool, or
-editing it in Settings. Nothing is captured implicitly: a model that decides
-what is worth keeping records "ok" and its own unaccepted suggestions, and the
-file rots within a week. It is budgeted, and over budget writes are refused
-rather than silently truncated.
+## Operators
 
-When history outgrows the context window, everything except the most recent
-messages is folded into one model-written summary and persisted in its place.
-Summaries chain. The old behaviour — dropping the oldest turns silently —
-remains only as a fallback when compression is off or fails.
+Typed in the composer, handled before anything reaches the model — so they work
+in Chat mode too, where no tools are registered.
 
-### Slash commands
+| Command | Effect |
+| --- | --- |
+| `/remember <fact>` | Append a fact to long-term memory |
+| `/forget <text>` | Remove matching memory entries |
+| `/memory` | Show memory and open its editor |
+| `/tools` | List registered tools and which groups are enabled |
+| `/model <name>` | Switch model by partial name |
+| `/new` | Start a new conversation |
+| `/help` | List these |
 
-Handled before anything reaches the model, so they work identically in Chat
-mode where no tools are registered.
+Type `/` for a filterable menu; Tab completes.
 
-`/remember` `/forget` `/memory` `/tools` `/model` `/new` `/help`
+## Long-term memory
 
----
+Plain markdown at `%LOCALAPPDATA%\Helm\memory.md`, injected into every system
+prompt in both modes. Budgeted (`memory_budget_bytes`, default 8192): over
+budget, writes are refused rather than silently truncated. Edit it directly in
+Settings, or with `/remember` and `/forget`. In agent mode the model can also
+call `remember`, `recall_memory`, and `forget`.
 
-## Known rough edges
-
-- Some GPT-OSS conversions mark `<|end|>` as end-of-generation, which stops the
-  turn after the analysis channel. Symptom is "did not return a valid Harmony
-  final message"; the raw output is in `helm.log`.
-- ComfyUI's first image of a session autostarts the server and loads ~7 GB into
-  VRAM. Expect 60–90 seconds. Launching `START_COMFYUI.cmd` beforehand avoids
-  it.
-- The tool installer pulls a second full PyTorch CUDA stack for ComfyUI,
-  independent of anything already on the machine. That is most of its footprint.
-
----
-
-## Direction
-
-The next substantial change splits the core out of the window: a headless
-server holding sessions, memory, and workspace, with the desktop app as one
-client among several and the same `web/` assets served to phones on the LAN.
-The bridge already funnels all interface traffic through a single JSON channel,
-which is the seam that makes it tractable.
+Writes are always explicit. Nothing is captured implicitly.

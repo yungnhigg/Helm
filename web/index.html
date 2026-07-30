@@ -184,6 +184,12 @@
         <label><input id="setting-document-tools" type="checkbox"> Document extraction</label>
         <label><input id="setting-desktop-tools" type="checkbox"> Desktop controls</label>
         <label><input id="setting-compression" type="checkbox"> Conversation compression</label>
+        <label><input id="setting-archive-tools" type="checkbox"> Offline archive</label>
+      </div>
+      <div class="form-grid" style="margin-top:12px">
+        <label class="full"><span>Write root — file writes are confined here; empty means anywhere</span><input id="setting-write-root" type="text" spellcheck="false" placeholder="F:\AgentScratch"></label>
+        <label class="full"><span>Archive index (.db)</span><input id="setting-archive-db" type="text" spellcheck="false" placeholder="D:\wiki.db"></label>
+        <label class="full"><span>Archive shards folder</span><input id="setting-archive-shards" type="text" spellcheck="false" placeholder="D:\wikipedia_RAG"></label>
       </div>
       <div id="tool-detection" class="detection-grid"></div>
 

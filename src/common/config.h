@@ -45,6 +45,10 @@ struct Config {
 
     int max_gen_tokens = 2048;
     int max_agent_iterations = 8;
+    // An autonomous run does real multi-step work; 8 turns is not a task, it is
+    // a false start. Bounded rather than unbounded so a looping model still
+    // terminates.
+    int max_autonomous_iterations = 60;
     int ctx_reserve_tokens = 1024;
 
     // Conversation compression. When history overflows the context budget,
@@ -67,13 +71,21 @@ struct Config {
     std::string whisper_model;
     std::string piper_exe;
     std::string piper_voice;
+    // Offline archive: SQLite FTS5 index over the Wikipedia JSONL shards.
+    // Empty disables the search_archive tool rather than failing at call time.
+    std::string archive_db;
+    std::string archive_shards;
+
     std::string comfyui_url = "http://127.0.0.1:8188";
     std::string comfyui_workflow;
     bool enable_web_tools = true;
     bool enable_image_tools = true;
     bool enable_voice_tools = true;
     bool enable_document_tools = true;
-    bool enable_desktop_tools = true;
+    // Off by default: this group can drive the mouse and keyboard, which no
+    // research or coding task needs. Opt in from Settings when it is wanted.
+    bool enable_desktop_tools = false;
+    bool enable_archive_tools = true;
 
     // Prompt envelope. "chatml" is the only format implemented; the field
     // exists so a Harmony renderer (gpt-oss) can be added as a new file rather

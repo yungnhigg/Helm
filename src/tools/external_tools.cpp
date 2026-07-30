@@ -123,6 +123,10 @@ ProcessCaptureResult run_process_capture(const std::wstring& executable,
     return result;
 }
 
+static std::wstring archive_script() {
+    return utf8_to_wide(exe_dir() + "tools_runtime\\archive_index.py");
+}
+
 static std::wstring helper_script() {
     return utf8_to_wide(exe_dir() + "tools_runtime\\helm_tools.py");
 }
@@ -143,6 +147,17 @@ static ProcessCaptureResult run_helper(const Config& cfg, const std::vector<std:
                                  "Tool root in Settings matches where it installed.");
     }
     std::vector<std::wstring> full{helper_script()};
+    full.insert(full.end(), args.begin(), args.end());
+    return run_process_capture(utf8_to_wide(python), full, L"", timeout, job);
+}
+
+static ProcessCaptureResult run_archive(const Config& cfg, const std::vector<std::wstring>& args,
+                                        int timeout, JobHandle* job = nullptr) {
+    const std::string python = cfg.resolved_tool_python();
+    if (!fs::exists(utf8_to_wide(python)))
+        throw std::runtime_error("Python tool runtime not found at " + python +
+                                 ". Run install_helm_tools.cmd.");
+    std::vector<std::wstring> full{archive_script()};
     full.insert(full.end(), args.begin(), args.end());
     return run_process_capture(utf8_to_wide(python), full, L"", timeout, job);
 }
@@ -223,6 +238,38 @@ void register_external_tools(Registry& r, const Config& cfg) {
             auto result = run_helper(*c, {L"web-search", L"--query", utf8_to_wide(a.at("query").get<std::string>()),
                                           L"--max-results", std::to_wstring(count)}, 110, &job);
             return require_success(result, "web search");
+        }
+    });
+
+    r.add({
+        "search_archive",
+        "Search the local offline Wikipedia archive stored on this machine. Use it before search_web for "
+        "encyclopedic, historical, scientific, or biographical questions: it is faster, works with no "
+        "network, and every result resolves to a real article. Fall back to the web only for current "
+        "events or when the archive has nothing relevant.",
+        {{"query", ParamType::String, "Search terms; plain keywords work best"},
+         {"max_results", ParamType::Integer, "Number of chunks to return, from 1 to 20"}},
+        ToolClass::Job, {},
+        [c](const nlohmann::json& a, JobHandle& job) {
+            if (!c->enable_archive_tools) return std::string("error: archive tools are disabled in Settings");
+            if (c->archive_db.empty())
+                return std::string("error: no archive index configured. Build one with "
+                                   "archive_index.py and set Archive index in Settings.");
+            if (!fs::exists(utf8_to_wide(c->archive_db)))
+                return std::string("error: archive index not found at " + c->archive_db);
+            const int count = std::clamp(a.at("max_results").get<int>(), 1, 20);
+            std::vector<std::wstring> args{L"search", L"--db", utf8_to_wide(c->archive_db),
+                L"--query", utf8_to_wide(a.at("query").get<std::string>()),
+                L"-n", std::to_wstring(count)};
+            // Recorded at index time; only needed when the shards have moved.
+            if (!c->archive_shards.empty()) {
+                args.push_back(L"--source");
+                args.push_back(utf8_to_wide(c->archive_shards));
+            }
+            // Local disk, so this is fast; the ceiling only catches a cold cache
+            // on a multi-gigabyte index.
+            auto result = run_archive(*c, args, 60, &job);
+            return require_success(result, "archive search");
         }
     });
 

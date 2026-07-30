@@ -32,6 +32,32 @@ set(LLAMA_BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
 set(LLAMA_BUILD_TOOLS    OFF CACHE BOOL "" FORCE)
 set(LLAMA_BUILD_SERVER   OFF CACHE BOOL "" FORCE)
 set(LLAMA_BUILD_COMMON   OFF CACHE BOOL "" FORCE)
+# CUDA. Defaults only — anything passed with -D at configure time wins.
+#
+# These have to be resolved before FetchContent_MakeAvailable(llama), because
+# ggml reads them at configure time. Set them afterwards and you get a build
+# that compiles, links, loads a model, and runs entirely on the CPU.
+#
+# Defaulting to ON rather than requiring the flag: a forgotten -DGGML_CUDA=ON
+# produces a working-but-slow binary with no error anywhere, which is a bad
+# thing to be able to do by omission.
+#
+# 89 = Ada (RTX 4090). Blackwell (RTX PRO 5000 / 5090) is 120, Ampere 86.
+if(NOT DEFINED GGML_CUDA)
+    set(GGML_CUDA ON CACHE BOOL "Build llama.cpp with the CUDA backend")
+endif()
+if(GGML_CUDA)
+    if(NOT DEFINED CMAKE_CUDA_ARCHITECTURES)
+        set(CMAKE_CUDA_ARCHITECTURES "89" CACHE STRING "CUDA architecture to target")
+    endif()
+    if(NOT DEFINED GGML_CUDA_GRAPHS)
+        set(GGML_CUDA_GRAPHS ON CACHE BOOL "")
+    endif()
+    message(STATUS "Helm: CUDA backend on, arch sm_${CMAKE_CUDA_ARCHITECTURES}")
+else()
+    message(WARNING "Helm: building WITHOUT CUDA - inference will run on the CPU")
+endif()
+
 FetchContent_Declare(
     llama
     GIT_REPOSITORY https://github.com/ggml-org/llama.cpp

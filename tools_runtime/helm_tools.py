@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""External open-source tool adapter used by Helm 1.4.3.
+"""External open-source tool adapter used by Helm 1.4.4.
 
 Each subcommand writes a compact UTF-8 result to stdout and diagnostics to
 stderr. The C++ host owns timeouts/cancellation and never executes arbitrary
@@ -117,7 +117,7 @@ class _BrowserPool:
             page = browser.new_page(
                 viewport={"width": 1440, "height": 1000},
                 user_agent=("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
-                            "HelmLocalAI/1.4.3 Chrome/126 Safari/537.36"),
+                            "HelmLocalAI/1.4.4 Chrome/126 Safari/537.36"),
             )
             # Budget split: most of it on first paint, a short tail for late XHR.
             page.goto(url, wait_until="domcontentloaded", timeout=int(budget_seconds * 1000 * 0.7))
@@ -182,7 +182,7 @@ def _static_fetch(url: str, max_chars: int, client=None, timeout: float = 12.0) 
         return {"url": url, "text": "", "method": "static", "error": f"httpx unavailable: {exc}"}
     headers = {
         "User-Agent": ("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
-                       "HelmLocalAI/1.4.3 Chrome/126 Safari/537.36"),
+                       "HelmLocalAI/1.4.4 Chrome/126 Safari/537.36"),
         "Accept": "text/html,application/xhtml+xml,text/plain;q=0.9,*/*;q=0.6",
         "Accept-Language": "en-US,en;q=0.8",
     }
@@ -260,7 +260,7 @@ def web_search(args: argparse.Namespace) -> None:
     started = time.time()
     headers = {
         "User-Agent": ("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
-                       "HelmLocalAI/1.4.3 Chrome/126 Safari/537.36"),
+                       "HelmLocalAI/1.4.4 Chrome/126 Safari/537.36"),
         "Accept-Language": "en-US,en;q=0.8",
     }
     url = "https://html.duckduckgo.com/html/?" + urllib.parse.urlencode({"q": args.query})
@@ -634,7 +634,28 @@ def build_parser() -> argparse.ArgumentParser:
     return parser
 
 
+def _force_utf8_streams() -> None:
+    """Make stdout/stderr UTF-8 regardless of the Windows code page.
+
+    The C++ host reads this script's stdout through a pipe. Python sees a pipe,
+    not a console, so it picks the locale encoding - cp1252 on a US Windows box -
+    and any non-ASCII character in fetched web text kills the process:
+
+        UnicodeEncodeError: 'charmap' codec can't encode character '\u2010'
+
+    U+2010 is an ordinary typographic hyphen. Wikipedia and half the web are full
+    of them, so this is not an edge case; it is every other page. nlohmann::json
+    on the receiving side expects UTF-8, which is what this produces.
+    """
+    for stream in (sys.stdout, sys.stderr):
+        try:
+            stream.reconfigure(encoding="utf-8", errors="replace")
+        except Exception:
+            pass
+
+
 def main() -> None:
+    _force_utf8_streams()
     args = build_parser().parse_args()
     args.func(args)
 

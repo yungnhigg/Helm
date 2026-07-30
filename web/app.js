@@ -981,14 +981,15 @@ function renderBuiltInTools() {
   }
   const detected = state.settingsDetected || {};
   const readiness = name => {
+    if (name === 'search_archive') return state.settings.enable_archive_tools !== false && !!detected.python && !!detected.archive;
     if (name === 'search_web' || name === 'fetch_web_page') return state.settings.enable_web_tools !== false && !!detected.python;
     if (name === 'generate_image') return state.settings.enable_image_tools !== false && !!detected.python && !!detected.comfy_workflow;
     if (name === 'speak_text') return state.settings.enable_voice_tools !== false && !!detected.piper && !!detected.piper_voice;
     if (name === 'extract_document') return state.settings.enable_document_tools !== false && !!detected.python;
-    if (name.startsWith('desktop_')) return state.settings.enable_desktop_tools !== false && !!detected.python;
+    if (name.startsWith('desktop_')) return state.settings.enable_desktop_tools === true && !!detected.python;
     return true;
   };
-  const external = new Set(['search_web', 'fetch_web_page', 'generate_image', 'speak_text', 'extract_document', 'desktop_screenshot', 'desktop_click', 'desktop_type', 'desktop_hotkey']);
+  const external = new Set(['search_web', 'fetch_web_page', 'search_archive', 'generate_image', 'speak_text', 'extract_document', 'desktop_screenshot', 'desktop_click', 'desktop_type', 'desktop_hotkey']);
   for (const tool of state.tools) {
     const row = document.createElement('div');
     row.className = 'tooling-row';
@@ -1040,8 +1041,12 @@ function populateSettings() {
   $('setting-image-tools').checked = v.enable_image_tools !== false;
   $('setting-voice-tools').checked = v.enable_voice_tools !== false;
   $('setting-document-tools').checked = v.enable_document_tools !== false;
-  $('setting-desktop-tools').checked = v.enable_desktop_tools !== false;
+  $('setting-desktop-tools').checked = v.enable_desktop_tools === true;
   $('setting-compression').checked = v.enable_compression !== false;
+  $('setting-archive-tools').checked = v.enable_archive_tools !== false;
+  setValue('setting-write-root', v.write_root || '');
+  setValue('setting-archive-db', v.archive_db || '');
+  setValue('setting-archive-shards', v.archive_shards || '');
   renderDetection();
 }
 
@@ -1051,7 +1056,7 @@ function renderDetection() {
   const names = {
     python: 'Tool runtime', ffmpeg: 'FFmpeg', whisper: 'Whisper', whisper_model: 'Whisper model',
     piper: 'Piper', piper_voice: 'Piper voice', comfy_workflow: 'Comfy workflow',
-    browser: 'JS page rendering'
+    browser: 'JS page rendering', archive: 'Offline archive'
   };
   for (const [key, label] of Object.entries(names)) {
     const chip = document.createElement('span');
@@ -1106,7 +1111,11 @@ function saveSettings() {
       enable_voice_tools: $('setting-voice-tools').checked,
       enable_document_tools: $('setting-document-tools').checked,
       enable_desktop_tools: $('setting-desktop-tools').checked,
-      enable_compression: $('setting-compression').checked
+      enable_compression: $('setting-compression').checked,
+      enable_archive_tools: $('setting-archive-tools').checked,
+      write_root: $('setting-write-root').value.trim(),
+      archive_db: $('setting-archive-db').value.trim(),
+      archive_shards: $('setting-archive-shards').value.trim()
     }
   });
 }

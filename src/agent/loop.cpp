@@ -312,7 +312,10 @@ void AgentLoop::run_turn(const std::string& session_id, const TurnOptions& optio
     const std::string& docs = harmony ? harmony_docs_ : tool_docs_;
 
     const int token_limit = generation_limit(options.effort);
-    for (int iter = 0; iter < cfg_.max_agent_iterations; ++iter) {
+    const int iteration_budget = options.autonomous
+        ? std::max(4, cfg_.max_autonomous_iterations)
+        : cfg_.max_agent_iterations;
+    for (int iter = 0; iter < iteration_budget; ++iter) {
         const auto current = store_.messages(session_id);
         std::string query;
         for (auto it = current.rbegin(); it != current.rend(); ++it) {
@@ -366,7 +369,24 @@ void AgentLoop::run_turn(const std::string& session_id, const TurnOptions& optio
             // back would compound across turns and crowd out real history.
             store_.append(session_id, {Role::Assistant, content, ""});
             send_for(session_id, "assistant_final", {{"text", content}, {"thinking", thinking}});
-            return;
+
+            // Interactive turn: the reply is the answer and the turn is over.
+            if (!options.autonomous) return;
+
+            // Autonomous run: the reply was progress. Record a continuation
+            // marker on the tool rail and keep going. This is enforced here
+            // rather than requested in the prompt, because the previous
+            // behaviour returned regardless of what the prompt said.
+            const int left = iteration_budget - iter - 1;
+            if (left <= 0) break;
+            store_.append(session_id, {Role::Tool,
+                "Progress noted. The task is not finished until you call task_complete. "
+                "Continue with the next concrete step now: issue a tool_call. You have " +
+                std::to_string(left) + " step(s) remaining before this run is cut off.",
+                "run_controller"});
+            send_for(session_id, "note", {{"text", "Continuing autonomous run (" +
+                std::to_string(left) + " step(s) left)"}});
+            continue;
         }
 
         if (type != "tool_call") {
@@ -377,6 +397,14 @@ void AgentLoop::run_turn(const std::string& session_id, const TurnOptions& optio
         const std::string name = output.value("name", "");
         const json args = output.value("arguments", json::object());
         const std::string note = output.value("note", "");
+
+        if (name == "task_complete") {
+            const std::string summary = args.value("summary", "Task reported complete.");
+            store_.append(session_id, {Role::Assistant, summary, ""});
+            send_for(session_id, "assistant_final", {{"text", summary}, {"thinking", thinking}});
+            log("autonomous run completed after " + std::to_string(iter + 1) + " iteration(s)");
+            return;
+        }
         send_for(session_id, "tool_call",
                  {{"name", name}, {"args", args}, {"note", note}, {"thinking", thinking}});
         // GPT-OSS expects its own analysis and call trace replayed verbatim on

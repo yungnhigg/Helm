@@ -174,9 +174,12 @@ void Bridge::send_settings() {
               {"flash_attention", cfg_.flash_attention}, {"kv_cache_location", cfg_.kv_cache_location},
               {"kv_cache_type", cfg_.kv_cache_type}, {"tool_root", cfg_.tool_root},
               {"comfyui_url", cfg_.comfyui_url}, {"comfyui_workflow", cfg_.comfyui_workflow},
+              {"archive_db", cfg_.archive_db}, {"archive_shards", cfg_.archive_shards},
+              {"write_root", cfg_.write_root},
               {"enable_web_tools", cfg_.enable_web_tools}, {"enable_image_tools", cfg_.enable_image_tools},
               {"enable_voice_tools", cfg_.enable_voice_tools}, {"enable_document_tools", cfg_.enable_document_tools},
-              {"enable_desktop_tools", cfg_.enable_desktop_tools}, {"enable_compression", cfg_.enable_compression}
+              {"enable_desktop_tools", cfg_.enable_desktop_tools}, {"enable_compression", cfg_.enable_compression},
+              {"enable_archive_tools", cfg_.enable_archive_tools}
           }},
           {"detected", {
               {"python", exists(cfg_.resolved_tool_python())}, {"ffmpeg", exists(cfg_.resolved_ffmpeg())},
@@ -186,7 +189,8 @@ void Bridge::send_settings() {
               // Headless Chromium is what lets tools read JavaScript-rendered
               // pages. Without it the web tools silently return empty pages,
               // so its absence needs to be visible rather than inferred.
-              {"browser", exists(cfg_.tool_root + "\\Playwright-Browsers")}
+              {"browser", exists(cfg_.tool_root + "\\Playwright-Browsers")},
+              {"archive", exists(cfg_.archive_db)}
           }}});
 }
 
@@ -325,6 +329,9 @@ void Bridge::on_web_message(const std::wstring& raw) {
         cfg_.kv_cache_type = v.value("kv_cache_type", cfg_.kv_cache_type);
         if (cfg_.kv_cache_type != "f16" && cfg_.kv_cache_type != "q8_0" && cfg_.kv_cache_type != "q4_0") cfg_.kv_cache_type = "f16";
         cfg_.tool_root = v.value("tool_root", cfg_.tool_root);
+        cfg_.write_root = v.value("write_root", cfg_.write_root);
+        cfg_.archive_db = v.value("archive_db", cfg_.archive_db);
+        cfg_.archive_shards = v.value("archive_shards", cfg_.archive_shards);
         cfg_.comfyui_url = v.value("comfyui_url", cfg_.comfyui_url);
         cfg_.comfyui_workflow = v.value("comfyui_workflow", cfg_.comfyui_workflow);
         cfg_.enable_web_tools = v.value("enable_web_tools", cfg_.enable_web_tools);
@@ -333,6 +340,7 @@ void Bridge::on_web_message(const std::wstring& raw) {
         cfg_.enable_document_tools = v.value("enable_document_tools", cfg_.enable_document_tools);
         cfg_.enable_desktop_tools = v.value("enable_desktop_tools", cfg_.enable_desktop_tools);
         cfg_.enable_compression = v.value("enable_compression", cfg_.enable_compression);
+        cfg_.enable_archive_tools = v.value("enable_archive_tools", cfg_.enable_archive_tools);
         cfg_.persist_runtime_settings();
         emit({{"type", "settings_saved"}, {"reloading", eng_.loaded()}});
         send_settings();
@@ -517,6 +525,7 @@ void Bridge::on_web_message(const std::wstring& raw) {
         options.mode = "agent";
         options.effort = j.value("effort", std::string("medium"));
         options.agent_id = agent_id;
+        options.autonomous = true;
         const std::string kickoff = j.value("instruction", std::string(
             "Begin the task defined in your active configuration now. Do not reply with a plan or "
             "ask what to do first: make your first tool call in this response."));
