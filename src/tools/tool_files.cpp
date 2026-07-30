@@ -112,7 +112,11 @@ void register_tool_files(Registry& r, const Config& cfg) {
         "and nothing will be saved. Use overwrite=false (and append=false) unless replacement is intended.";
     if (!cfg.write_root.empty()) {
         write_desc += " Writes are confined to " + cfg.write_root +
-            " and its subfolders - always use a path under there, never guess a different location.";
+            " and its subfolders - always use a path under there, never guess a different location. "
+            "That directory is already known and does not need to be searched for, listed, or "
+            "verified first: pick a filename yourself and call this tool directly. Do not call "
+            "search_web, search_archive, or list_directory before a simple write - none of them can "
+            "tell you anything about the destination that is not already stated here.";
     }
 
     r.add({

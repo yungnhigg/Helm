@@ -212,7 +212,10 @@ std::string AgentLoop::workspace_prompt(const TurnOptions& options, const std::s
         resource_ids.insert(resource_ids.end(), agent.rag_ids.begin(), agent.rag_ids.end());
         if (!agent.config_resource_id.empty()) resource_ids.push_back(agent.config_resource_id);
         if (agent.type == "local") {
-            out << " You may use local-computer tools when needed. Prefer inspecting before modifying, and report what changed.";
+            out << " You may use local-computer tools when needed. Prefer inspecting before modifying "
+                   "something that already exists, and report what changed. A brand-new file the user "
+                   "just asked for does not need to be searched for or investigated first - it does "
+                   "not exist yet, so there is nothing to inspect. Create it directly.";
         } else if (agent.type == "task") {
             out << " Follow the imported task configuration and complete its steps using tools where useful.";
         } else if (agent.type == "webscraper") {
