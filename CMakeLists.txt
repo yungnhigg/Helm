@@ -10,6 +10,14 @@ enable_language(RC)
 
 add_compile_definitions(UNICODE _UNICODE NOMINMAX WIN32_LEAN_AND_MEAN)
 
+# /utf-8 is applied per-target below rather than globally. add_compile_options
+# would also hand it to nvcc, which does not accept MSVC flags and fails the
+# whole CUDA build. Every target that compiles our own C++ needs it: MSVC
+# otherwise reads source bytes as the system code page, so a UTF-8 literal
+# becomes mojibake with nothing but a C4566 warning to show for it. Test targets
+# must get the same flag as the code they test, or their literals differ from the
+# ones under test and comparisons fail.
+
 # ---------------------------------------------------------------- llama.cpp
 # Pinned. Updating is a deliberate choice: change the tag, rebuild, fix engine/ if llama.h moved.
 include(FetchContent)
@@ -151,6 +159,9 @@ if(BUILD_TESTING)
         src/engine/grammar.cpp
     )
     target_compile_features(helm_grammar_tests PRIVATE cxx_std_20)
+    if(MSVC)
+        target_compile_options(helm_grammar_tests PRIVATE /utf-8)
+    endif()
     target_include_directories(helm_grammar_tests PRIVATE src)
     add_test(NAME helm_grammar_tests COMMAND helm_grammar_tests)
 
@@ -160,6 +171,9 @@ if(BUILD_TESTING)
         src/agent/prompt_builder.cpp
     )
     target_compile_features(helm_harmony_tests PRIVATE cxx_std_20)
+    if(MSVC)
+        target_compile_options(helm_harmony_tests PRIVATE /utf-8)
+    endif()
     target_include_directories(helm_harmony_tests PRIVATE src third_party)
     add_test(NAME helm_harmony_tests COMMAND helm_harmony_tests)
 
@@ -167,6 +181,9 @@ if(BUILD_TESTING)
         tests/test_stream_filter.cpp
     )
     target_compile_features(helm_stream_filter_tests PRIVATE cxx_std_20)
+    if(MSVC)
+        target_compile_options(helm_stream_filter_tests PRIVATE /utf-8)
+    endif()
     target_include_directories(helm_stream_filter_tests PRIVATE src)
     add_test(NAME helm_stream_filter_tests COMMAND helm_stream_filter_tests)
 endif()

@@ -78,10 +78,15 @@ def check_cuda(repo: Path) -> None:
     else:
         check(WARN, "CUDA architecture", "not set; llama.cpp will build a fat binary (slow compile)")
 
-    if re.search(r"dwmapi", text, re.I):
-        check(PASS, "dwmapi linked", "dark window caption is possible")
+    # Link libraries live in the generated project file, not the cache.
+    proj = repo / "build" / "helm.vcxproj"
+    if proj.is_file():
+        if re.search(r"dwmapi", proj.read_text(errors="replace"), re.I):
+            check(PASS, "dwmapi linked", "dark window caption is possible")
+        else:
+            check(FAIL, "dwmapi linked", "not linked - the title bar will render in the system theme")
     else:
-        check(WARN, "dwmapi linked", "not found in cache; the title bar may render light")
+        check(WARN, "dwmapi linked", "helm.vcxproj not found; cannot verify")
 
 
 def check_binary_freshness(repo: Path) -> Path | None:
@@ -161,12 +166,22 @@ def check_tool_runtime(tool_root: Path) -> None:
 
     modules = ["httpx", "bs4", "trafilatura", "pypdf", "docx", "openpyxl",
                "pptx", "mss", "PIL", "pyautogui", "playwright"]
-    code = ("import importlib,sys;"
-            "bad=[m for m in %r if importlib.util.find_spec(m) is None];"
-            "print(','.join(bad))" % modules)
+    import tempfile
+    probe_src = ("import importlib.util\n"
+                 "mods = " + repr(modules) + "\n"
+                 "bad = [m for m in mods if importlib.util.find_spec(m) is None]\n"
+                 "print(','.join(bad))\n")
     try:
-        out = subprocess.run([str(python), "-c", code], capture_output=True,
+        with tempfile.NamedTemporaryFile("w", suffix=".py", delete=False,
+                                         encoding="utf-8") as tf:
+            tf.write(probe_src)
+            probe_path = tf.name
+        out = subprocess.run([str(python), probe_path], capture_output=True,
                              text=True, timeout=90)
+        try:
+            os.unlink(probe_path)
+        except OSError:
+            pass
         missing = out.stdout.strip()
         if out.returncode != 0:
             check(WARN, "Tool imports", f"probe failed: {out.stderr.strip()[:120]}")
