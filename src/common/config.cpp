@@ -39,7 +39,6 @@ static void load_runtime_fields(const json& j, Config& c) {
     c.vision_model = j.value("vision_model", c.vision_model);
     c.vision_mmproj = j.value("vision_mmproj", c.vision_mmproj);
     c.enable_vision_tools = j.value("enable_vision_tools", c.enable_vision_tools);
-    c.max_autonomous_iterations = std::clamp(j.value("max_autonomous_iterations", c.max_autonomous_iterations), 4, 400);
     c.write_root = j.value("write_root", c.write_root);
     c.image_output_dir = j.value("image_output_dir", c.image_output_dir);
     c.archive_db = j.value("archive_db", c.archive_db);
@@ -76,7 +75,6 @@ bool Config::load(std::string& err) {
         active_model_id = j.value("active_model_id", active_model_id);
         load_runtime_fields(j, *this);
         max_gen_tokens = j.value("max_gen_tokens", max_gen_tokens);
-        max_agent_iterations = j.value("max_agent_iterations", max_agent_iterations);
         ctx_reserve_tokens = j.value("ctx_reserve_tokens", ctx_reserve_tokens);
         allow_process_tools = j.value("allow_process_tools", allow_process_tools);
         if (j.contains("process_allowlist")) process_allowlist = j["process_allowlist"].get<std::vector<std::string>>();
@@ -200,7 +198,6 @@ void Config::persist_runtime_settings() const {
         {"piper_exe", piper_exe}, {"piper_voice", piper_voice},
         {"vision_cli_exe", vision_cli_exe}, {"vision_model", vision_model}, {"vision_mmproj", vision_mmproj},
         {"enable_vision_tools", enable_vision_tools},
-        {"max_autonomous_iterations", max_autonomous_iterations},
         {"write_root", write_root}, {"image_output_dir", image_output_dir},
         {"archive_db", archive_db}, {"archive_shards", archive_shards},
         {"comfyui_url", comfyui_url}, {"comfyui_workflow", comfyui_workflow},

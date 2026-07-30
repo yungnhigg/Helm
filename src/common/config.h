@@ -51,11 +51,6 @@ struct Config {
     std::string kv_cache_type = "f16"; // f16 | q8_0 | q4_0
 
     int max_gen_tokens = 2048;
-    int max_agent_iterations = 8;
-    // An autonomous run does real multi-step work; 8 turns is not a task, it is
-    // a false start. Bounded rather than unbounded so a looping model still
-    // terminates.
-    int max_autonomous_iterations = 60;
     int ctx_reserve_tokens = 1024;
 
     // Conversation compression. When history overflows the context budget,

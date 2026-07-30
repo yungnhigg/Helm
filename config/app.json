@@ -21,7 +21,6 @@
   "kv_cache_location": "vram",
   "kv_cache_type": "f16",
   "max_gen_tokens": 2048,
-  "max_agent_iterations": 8,
   "ctx_reserve_tokens": 1024,
 
   // Generic process execution. Off by default: crawled pages and RAG file text

@@ -107,6 +107,7 @@ add_executable(helm WIN32
     src/agent/harmony.cpp
     src/tools/tool_run_control.cpp
     src/agent/loop.cpp
+    src/agent/run_guard.cpp
     src/agent/jobs.cpp
     src/session/session.cpp
     src/session/memory.cpp
@@ -187,6 +188,16 @@ if(BUILD_TESTING)
     endif()
     target_include_directories(helm_registry_tests PRIVATE src third_party)
     add_test(NAME helm_registry_tests COMMAND helm_registry_tests)
+    add_executable(helm_run_guard_tests
+        tests/test_run_guard.cpp
+        src/agent/run_guard.cpp
+    )
+    target_compile_features(helm_run_guard_tests PRIVATE cxx_std_20)
+    if(MSVC)
+        target_compile_options(helm_run_guard_tests PRIVATE /utf-8)
+    endif()
+    target_include_directories(helm_run_guard_tests PRIVATE src third_party)
+    add_test(NAME helm_run_guard_tests COMMAND helm_run_guard_tests)
 
     add_executable(helm_stream_filter_tests
         tests/test_stream_filter.cpp

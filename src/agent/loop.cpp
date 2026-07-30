@@ -1,4 +1,5 @@
 #include "agent/loop.h"
+#include "agent/run_guard.h"
 #include "agent/stream_filter.h"
 #include "agent/harmony_stream.h"
 #include "agent/harmony.h"
@@ -626,23 +627,41 @@ void AgentLoop::run_turn(const std::string& session_id, const TurnOptions& optio
             if (options.perpetual) { start_next_batch(options); }
             return;
         }
-        // Refuse a verbatim repeat in an autonomous run: an identical call cannot
-        // return a different result, and a 404 or empty page IS the answer.
+        // Defence in depth: Harmony can emit a name that was never declared.
+        // Reject denied and unknown tools before recording a model call in the
+        // transcript or showing it as an executable action in the UI.
+        if (!allow.empty() && allow.count(name) == 0) {
+            const std::string denied = "error: tool '" + name + "' is not permitted for this agent.";
+            log("denied tool by permission: " + name);
+            store_.append(session_id, {Role::Tool, denied, name});
+            send_for(session_id, "tool_result", {{"name", name}, {"result", denied}});
+            continue;
+        }
+        const Tool* tool = reg_.find(name);
+        if (!tool) {
+            const std::string unknown = "error: unknown tool '" + name + "'";
+            store_.append(session_id, {Role::Tool, unknown, name});
+            send_for(session_id, "tool_result", {{"name", name}, {"result", unknown}});
+            continue;
+        }
+
+        // One canonical repeat guard. The previous implementation registered
+        // args-only calls twice, so the first legitimate write/process call was
+        // rejected by the second check as its own duplicate.
         if (options.autonomous) {
-            const std::string signature = name + " " + args.dump();
-            if (std::count(run_call_signatures_.begin(), run_call_signatures_.end(), signature) >= 1) {
+            const std::string signature = canonical_tool_call_signature(name, args);
+            if (!remember_tool_call(run_call_signatures_, signature)) {
                 const std::string refusal =
                     "error: this exact call was already made in this run and cannot return anything "
-                    "new. If the earlier result was empty or a 404, that is the answer: the page or "
-                    "repository does not exist. Record it as unavailable and move to a DIFFERENT url "
-                    "or query. Never construct repository URLs from memory.";
+                    "new. Treat the earlier result as authoritative and choose a different URL, "
+                    "query, path, command, or arguments instead of repeating it.";
                 log("refused repeat tool_call: " + signature);
                 store_.append(session_id, {Role::Tool, refusal, name});
                 send_for(session_id, "tool_result", {{"name", name}, {"result", refusal}});
                 continue;
             }
-            run_call_signatures_.push_back(signature);
         }
+
         send_for(session_id, "tool_call",
                  {{"name", name}, {"args", args}, {"note", note}, {"thinking", thinking}});
         // GPT-OSS expects its own analysis and call trace replayed verbatim on
@@ -651,46 +670,6 @@ void AgentLoop::run_turn(const std::string& session_id, const TurnOptions& optio
         Message call{Role::Assistant, args.dump(), name};
         if (harmony) call.harmony_raw = r.text;
         store_.append(session_id, call);
-
-        // Defence in depth: even though a denied tool never appears in the docs
-        // or grammar, a Harmony model can still emit an arbitrary name. Re-check
-        // permission at dispatch so a forged call is refused, not run.
-        if (!allow.empty() && allow.count(name) == 0) {
-            const std::string denied = "error: tool '" + name + "' is not permitted for this agent.";
-            log("denied tool by permission: " + name);
-            store_.append(session_id, {Role::Tool, denied, name});
-            send_for(session_id, "tool_result", {{"name", name}, {"result", denied}});
-            continue;
-        }
-
-        // Repeat-breaker: an identical call cannot yield a new result. Key on the
-        // identifying argument (url or query), not the whole blob, so an
-        // incidental field difference does not slip a repeat through.
-        if (options.autonomous) {
-            std::string ident = args.value("url", std::string());
-            if (ident.empty()) ident = args.value("query", std::string());
-            if (ident.empty()) ident = args.dump();
-            const std::string signature = name + " " + ident;
-            if (run_call_signatures_.size() > 5000) run_call_signatures_.clear();
-            if (std::count(run_call_signatures_.begin(), run_call_signatures_.end(), signature) >= 1) {
-                const std::string refusal =
-                    "error: this exact call was already made in this run and cannot return anything "
-                    "new. If the earlier result was empty or a 404, that is the answer. Record it as "
-                    "unavailable and move to a DIFFERENT url or query. Never guess repository URLs.";
-                log("refused repeat tool_call: " + signature);
-                store_.append(session_id, {Role::Tool, refusal, name});
-                send_for(session_id, "tool_result", {{"name", name}, {"result", refusal}});
-                continue;
-            }
-            run_call_signatures_.push_back(signature);
-        }
-
-        const Tool* tool = reg_.find(name);
-        if (!tool) {
-            store_.append(session_id, {Role::Tool, "error: unknown tool", name});
-            continue;
-        }
-
         if (tool->cls == ToolClass::Sync) {
             std::string result;
             try { result = tool->run_sync(args); }
@@ -720,10 +699,6 @@ void AgentLoop::run_turn(const std::string& session_id, const TurnOptions& optio
         // racing a placeholder continuation against the real result.
         return;
     }
-
-    const std::string msg = "(stopped: reached the tool-call limit for one turn)";
-    store_.append(session_id, {Role::Assistant, msg, ""});
-    send_for(session_id, "assistant_final", {{"text", msg}});
 }
 
 } // namespace lar

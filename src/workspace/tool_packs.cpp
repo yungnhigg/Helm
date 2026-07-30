@@ -6,6 +6,7 @@
 #include <fstream>
 #include <vector>
 #include <algorithm>
+#include <chrono>
 #include <stdexcept>
 
 using nlohmann::json;
@@ -48,6 +49,7 @@ static std::string run_stdio_json_tool(const std::string& executable,
                                        const std::string& working_directory,
                                        const std::string& tool_name,
                                        const json& arguments,
+                                       int timeout_seconds,
                                        JobHandle& job) {
     SECURITY_ATTRIBUTES sa{sizeof(sa), nullptr, TRUE};
     HANDLE child_stdout_read = nullptr, child_stdout_write = nullptr;
@@ -70,6 +72,16 @@ static std::string run_stdio_json_tool(const std::string& executable,
     si.hStdError = child_stdout_write;
     si.hStdInput = child_stdin_read;
     PROCESS_INFORMATION pi{};
+    HANDLE process_job = CreateJobObjectW(nullptr, nullptr);
+    if (process_job) {
+        JOBOBJECT_EXTENDED_LIMIT_INFORMATION limits{};
+        limits.BasicLimitInformation.LimitFlags = JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE;
+        if (!SetInformationJobObject(process_job, JobObjectExtendedLimitInformation,
+                                     &limits, sizeof(limits))) {
+            CloseHandle(process_job);
+            process_job = nullptr;
+        }
+    }
 
     std::wstring command = quote_executable(utf8_to_wide(executable));
     if (!process_arguments.empty()) command += L" " + utf8_to_wide(process_arguments);
@@ -77,15 +89,32 @@ static std::string run_stdio_json_tool(const std::string& executable,
     mutable_command.push_back(L'\0');
     const std::wstring cwd = utf8_to_wide(working_directory);
 
+    const DWORD creation_flags = CREATE_NO_WINDOW | (process_job ? CREATE_SUSPENDED : 0);
     BOOL ok = CreateProcessW(nullptr, mutable_command.data(), nullptr, nullptr, TRUE,
-                             CREATE_NO_WINDOW, nullptr, cwd.empty() ? nullptr : cwd.c_str(), &si, &pi);
+                             creation_flags, nullptr, cwd.empty() ? nullptr : cwd.c_str(), &si, &pi);
     CloseHandle(child_stdout_write);
     CloseHandle(child_stdin_read);
     if (!ok) {
+        if (process_job) CloseHandle(process_job);
         CloseHandle(child_stdout_read);
         CloseHandle(child_stdin_write);
         throw std::runtime_error("tool-pack executable failed to start: " + std::to_string(GetLastError()));
     }
+    if (process_job) {
+        if (!AssignProcessToJobObject(process_job, pi.hProcess)) {
+            // Do not leave a failed job assignment suspended forever. The
+            // timeout still protects the main process, just not descendants.
+            ResumeThread(pi.hThread);
+            CloseHandle(process_job);
+            process_job = nullptr;
+        } else {
+            ResumeThread(pi.hThread);
+        }
+    }
+    const auto terminate_tree = [&](UINT code) {
+        if (process_job) TerminateJobObject(process_job, code);
+        else TerminateProcess(pi.hProcess, code);
+    };
 
     const std::string request = json{{"tool", tool_name}, {"arguments", arguments}}.dump() + "\n";
     DWORD written = 0;
@@ -93,9 +122,17 @@ static std::string run_stdio_json_tool(const std::string& executable,
     CloseHandle(child_stdin_write);
 
     std::string output;
+    const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(timeout_seconds);
+    bool timed_out = false;
     while (WaitForSingleObject(pi.hProcess, 100) == WAIT_TIMEOUT) {
         if (job.cancelled()) {
-            TerminateProcess(pi.hProcess, 2);
+            terminate_tree(2);
+            WaitForSingleObject(pi.hProcess, 3000);
+            break;
+        }
+        if (std::chrono::steady_clock::now() >= deadline) {
+            timed_out = true;
+            terminate_tree(3);
             WaitForSingleObject(pi.hProcess, 3000);
             break;
         }
@@ -107,8 +144,10 @@ static std::string run_stdio_json_tool(const std::string& executable,
     GetExitCodeProcess(pi.hProcess, &exit_code);
     CloseHandle(pi.hThread);
     CloseHandle(pi.hProcess);
+    if (process_job) CloseHandle(process_job);
     CloseHandle(child_stdout_read);
     if (job.cancelled()) return "imported tool cancelled";
+    if (timed_out) return "imported tool timed out after " + std::to_string(timeout_seconds) + " seconds\n" + output;
     if (exit_code != 0) return "imported tool exited with code " + std::to_string(exit_code) + "\n" + output;
     try {
         json response = json::parse(output);
@@ -135,6 +174,7 @@ size_t WorkspaceStore::register_tool_packs(Registry& registry) const {
         const std::string executable = manifest.value("executable", "");
         const std::string process_arguments = manifest.value("arguments", "");
         const std::string working_directory = manifest.value("working_directory", "");
+        const int pack_timeout = std::clamp(manifest.value("timeout_seconds", 900), 1, 86400);
         if (executable.empty()) continue;
         for (const auto& item : manifest.value("tools", json::array())) {
             Tool tool;
@@ -148,8 +188,10 @@ size_t WorkspaceStore::register_tool_packs(Registry& registry) const {
             }
             tool.cls = ToolClass::Job;
             const std::string tool_name = tool.name;
-            tool.run_job = [executable, process_arguments, working_directory, tool_name](const json& args, JobHandle& job) {
-                return run_stdio_json_tool(executable, process_arguments, working_directory, tool_name, args, job);
+            const int timeout_seconds = std::clamp(item.value("timeout_seconds", pack_timeout), 1, 86400);
+            tool.run_job = [executable, process_arguments, working_directory, tool_name, timeout_seconds](const json& args, JobHandle& job) {
+                return run_stdio_json_tool(executable, process_arguments, working_directory,
+                                           tool_name, args, timeout_seconds, job);
             };
             if (registry.add(std::move(tool))) ++added;
         }

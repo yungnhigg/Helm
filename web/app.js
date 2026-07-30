@@ -486,75 +486,15 @@ function renderSessions() {
 }
 
 function renderAgents() {
-  const grid = $('agent-grid');
-  grid.replaceChildren();
-  if (!state.agents.length) {
-    const empty = document.createElement('div');
-    empty.className = 'agent-empty';
-    empty.innerHTML = '<div><strong>No agents yet</strong><br><small>Add a local operator, task bot, or site crawler.</small></div>';
-    grid.append(empty);
-    return;
-  }
-  for (const agent of state.agents) {
-    const card = document.createElement('article');
-    card.className = 'agent-card';
-    const head = document.createElement('div');
-    head.className = 'agent-card-head';
-    const info = document.createElement('div');
-    const badge = document.createElement('span');
-    badge.className = 'badge';
-    badge.textContent = friendlyAgentType(agent.type);
-    const name = document.createElement('h3');
-    name.textContent = agent.name;
-    const desc = document.createElement('p');
-    desc.textContent = agent.type === 'local'
-      ? 'Interactive model with local file and process tools.'
-      : agent.type === 'task' ? 'Configuration-driven repeatable workflow.'
-      : `Bounded crawler${agent.site_url ? ` for ${agent.site_url}` : ''}.`;
-    info.append(badge, name, desc);
-    head.append(info);
-    const actions = document.createElement('div');
-    actions.className = 'agent-card-actions';
-    const open = document.createElement('button');
-    open.className = 'primary';
-    open.textContent = 'Open';
-    open.onclick = () => post({ type: 'open_agent', id: agent.id });
-    const run = document.createElement('button');
-    run.className = 'primary run-agent';
-    run.textContent = '▶ Run';
-    run.title = 'Open a new session and start the task immediately';
-    run.onclick = () => post({ type: 'run_agent', id: agent.id, effort: $('effort')?.value || 'medium' });
-    // Perpetual: restart with a fresh context after each batch, forever, until
-    // Stop. Distinct from Run so it is never triggered by accident.
-    const loop = document.createElement('button');
-    loop.className = 'primary run-agent';
-    loop.textContent = '\u221E Loop';
-    loop.title = 'Run forever: fresh context each batch, dedup on disk. Stop from the top bar.';
-    loop.onclick = () => { post({ type: 'run_agent', id: agent.id, perpetual: true, effort: $('effort')?.value || 'high' }); const b=$('stop-agent'); if(b) b.hidden=false; };
-    const rename = document.createElement('button');
-    rename.className = 'ghost';
-    rename.textContent = 'Rename';
-    rename.title = 'Rename this agent';
-    rename.onclick = () => {
-      const next = prompt('Rename agent', agent.name);
-      if (next === null) return;             // cancelled
-      const trimmed = next.trim();
-      if (!trimmed || trimmed === agent.name) return;
-      post({ type: 'rename_agent', id: agent.id, name: trimmed });
-    };
-    const remove = document.createElement('button');
-    remove.className = 'ghost';
-    remove.textContent = 'Delete';
-    remove.onclick = () => {
-      if (!confirm(`Delete "${agent.name}"? This cannot be undone.`)) return;
-      post({ type: 'delete_agent', id: agent.id });
-    };
-    actions.append(run, loop, open, rename, remove);
-    card.append(head, actions);
-    grid.append(card);
-  }
+  window.HelmAgentUI.renderAgents({
+    grid: $('agent-grid'),
+    agents: state.agents,
+    post,
+    effort: () => $('effort')?.value || 'medium',
+    revealStop: () => { const button = $('stop-agent'); if (button) button.hidden = false; },
+    toast
+  });
 }
-
 function renderResources() {
   const rag = state.resources.filter(resource => resource.kind === 'rag');
   const toolpacks = state.resources.filter(resource => resource.kind === 'tool_pack');
@@ -977,53 +917,15 @@ function updateTaskTypeFields() {
 }
 
 
-// Permission groups resolve to the EXACT tool names the registry registers.
-// If a tool is renamed in C++, its entry here must change too, or the group
-// silently grants nothing. task_complete is intentionally absent: the loop
-// always injects it so an autonomous run keeps a reachable exit.
-const PERM_GROUPS = [
-  { id: 'web',      label: 'Web & GitHub search',   tools: ['search_web','fetch_web_page','crawl_site','github_search'] },
-  { id: 'archive',  label: 'Offline archive search', tools: ['search_archive'] },
-  { id: 'loopstate',label: 'Loop state (perpetual)', tools: ['archive_seen'] },
-  { id: 'fileread', label: 'Read files',            tools: ['read_text_file','list_directory'] },
-  { id: 'filewrite',label: 'Write files',           tools: ['write_text_file'] },
-  { id: 'docs',     label: 'Read documents',        tools: ['extract_document'] },
-  { id: 'memread',  label: 'Read memory',           tools: ['recall_memory'] },
-  { id: 'memwrite', label: 'Write memory',          tools: ['remember','forget'] },
-  { id: 'images',   label: 'Generate images',       tools: ['generate_image'] },
-  { id: 'voice',    label: 'Speak',                 tools: ['speak_text'] },
-  { id: 'deskview', label: 'Desktop screenshot',    tools: ['desktop_screenshot'] },
-  { id: 'deskctl',  label: 'Desktop control',       tools: ['desktop_click','desktop_type','desktop_hotkey'] },
-  { id: 'process',  label: 'Run processes',         tools: ['run_process'] },
-  { id: 'utils',    label: 'Utilities',             tools: ['get_time','roll_dice'] },
-];
-const PERM_PRESETS = {
-  recommended: ['web','archive','loopstate','fileread','filewrite','docs','memread','memwrite','utils'],
-  readonly:    ['web','archive','fileread','docs','memread','utils'],
-  full:        PERM_GROUPS.map(g => g.id),
-};
+// Agent-specific UI lives in agent_ui.js. Keep the main bridge script focused
+// on application state and native message routing.
+const PERM_PRESETS = window.HelmAgentUI.permissionPresets;
 function renderPermOptions(presetGroups) {
-  const box = $('agent-perm-options');
-  if (!box) return;
-  const on = new Set(presetGroups);
-  box.innerHTML = '';
-  for (const g of PERM_GROUPS) {
-    const id = 'perm-' + g.id;
-    const label = document.createElement('label');
-    const cb = document.createElement('input');
-    cb.type = 'checkbox'; cb.value = g.id; cb.id = id; cb.checked = on.has(g.id);
-    const span = document.createElement('span'); span.textContent = g.label;
-    label.append(cb, span); box.append(label);
-  }
+  window.HelmAgentUI.renderPermissionOptions($('agent-perm-options'), presetGroups);
 }
 function selectedAllowedTools() {
-  const box = $('agent-perm-options');
-  const chosen = new Set([...box.querySelectorAll('input:checked')].map(i => i.value));
-  const tools = [];
-  for (const g of PERM_GROUPS) if (chosen.has(g.id)) tools.push(...g.tools);
-  return tools;
+  return window.HelmAgentUI.selectedAllowedTools($('agent-perm-options'));
 }
-
 function createAgent() {
   const name = $('agent-name').value.trim() || 'Agent';
   const modelId = $('agent-model').value || state.activeModel;
@@ -1514,7 +1416,10 @@ $('cancel-task').onclick = closeTaskModal;
 $('create-agent').onclick = createAgent;
 $('choose-agent-config').onclick = () => post({ type: 'import_agent_config' });
 $('add-rag').onclick = () => post({ type: 'import_rag' });
-$('add-toolpack').onclick = () => post({ type: 'import_tool_pack' });
+$('add-toolpack').onclick = () => {
+  const trusted = window.confirm('Imported tool packs can launch the executable declared in their manifest. Only import packs you trust. Continue?');
+  if (trusted) post({ type: 'import_tool_pack' });
+};
 $('open-rag').onclick = () => { state.activeAgent = null; setMode('agent'); setTimeout(() => $('rag-panel').scrollIntoView({ behavior: 'smooth' }), 0); };
 $('open-tools').onclick = () => { state.activeAgent = null; setMode('agent'); setTimeout(() => $('tools-panel').scrollIntoView({ behavior: 'smooth' }), 0); };
 $('task-modal').addEventListener('click', event => { if (event.target === $('task-modal')) closeTaskModal(); });

@@ -17,10 +17,9 @@ struct Message {
     Role role;
     std::string content;
     std::string tool_name;
-    // Native GPT-OSS Harmony output for an in-progress tool chain. Persisted so
-    // the model receives its own analysis and tool-call trace on the next tool
-    // continuation. Never sent to the UI, and dropped from prompts once a final
-    // answer closes the chain.
+    // Native GPT-OSS Harmony output for the active in-memory tool chain. The
+    // model needs it on the next continuation, but it is never written to disk,
+    // is discarded on restart, and is not replayed after a final answer.
     std::string harmony_raw;
 };
 

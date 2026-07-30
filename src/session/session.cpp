@@ -91,7 +91,7 @@ void SessionStore::load_all() {
                         role_from(jm.value("role", "user")),
                         jm.value("content", ""),
                         jm.value("tool_name", ""),
-                        jm.value("harmony_raw", "")
+                        "" // legacy on-disk traces are deliberately ignored
                     });
             }
             sessions_[data.meta.id] = std::move(data);
@@ -227,7 +227,6 @@ void SessionStore::persist_snapshot(SessionData s) const {
             {"content", m.content},
             {"tool_name", m.tool_name}
         };
-        if (!m.harmony_raw.empty()) jm["harmony_raw"] = m.harmony_raw;
         j["messages"].push_back(std::move(jm));
     }
     const fs::path path = utf8_to_wide(dir_ + s.meta.id + ".json");

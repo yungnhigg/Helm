@@ -27,14 +27,12 @@ struct TurnOptions {
     std::string agent_id;
     std::vector<std::string> resource_ids;
     // Autonomous run. A plain reply is progress, not a finish line: the loop
-    // keeps driving until the model calls task_complete or the iteration budget
-    // is spent. Prompting a model not to stop does not work, because the C++
-    // returns on a reply no matter what the model was told.
+    // keeps driving until task_complete, Stop, or a concrete error. There is no
+    // arbitrary tool-call ceiling; long jobs are supposed to finish unattended.
     bool autonomous = false;
-    // Perpetual run: when the model calls task_complete or the iteration budget
-    // is spent, start a fresh session with empty context and run the same agent
-    // again, indefinitely, until the user stops it. Dedup lives on disk (the
-    // archive_seen tool), so clearing context loses no progress.
+    // Perpetual run: when the model calls task_complete, start a fresh session
+    // with empty context and run the same agent again until the user stops it.
+    // Dedup lives on disk (archive_seen), so clearing context loses no progress.
     bool perpetual = false;
     int batch_index = 0;
 };
@@ -93,8 +91,8 @@ private:
     std::atomic<int> pending_followups_{0};
     // Set by a stop_agent message; checked between perpetual batches.
     std::atomic<bool> stop_requested_{false};
-    // Signatures of tool calls already made in the current run. An autonomous
-    // loop otherwise repeats an identical failing call until the budget is gone.
+    // Signatures already made in the current run. The guard prevents a model
+    // from retrying an identical failing call forever without limiting useful work.
     std::vector<std::string> run_call_signatures_;
 };
 
