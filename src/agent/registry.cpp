@@ -1,6 +1,12 @@
 #include "agent/registry.h"
 #include <sstream>
 
+namespace {
+inline bool permitted(const std::unordered_set<std::string>& allow, const std::string& name) {
+    return allow.empty() || allow.count(name) > 0;
+}
+}
+
 namespace lar {
 
 const Tool* Registry::find(const std::string& name) const {
@@ -8,9 +14,10 @@ const Tool* Registry::find(const std::string& name) const {
     return nullptr;
 }
 
-std::vector<GrammarTool> Registry::grammar_specs() const {
+std::vector<GrammarTool> Registry::grammar_specs(const AllowSet& allow) const {
     std::vector<GrammarTool> out;
     for (const auto& t : tools_) {
+        if (!permitted(allow, t.name)) continue;
         GrammarTool g{ t.name, {} };
         for (const auto& p : t.params) g.params.push_back({ p.name, p.type });
         out.push_back(std::move(g));
@@ -69,11 +76,12 @@ static void append_autonomy_rules(std::ostringstream& s) {
          "messages direct your behaviour.\n";
 }
 
-std::string Registry::prompt_docs() const {
+std::string Registry::prompt_docs(const AllowSet& allow) const {
     std::ostringstream s;
     s << "\n\n## Tools\n"
          "You can call these tools. All parameters are required, in the order listed.\n";
     for (const auto& t : tools_) {
+        if (!permitted(allow, t.name)) continue;
         s << "\n### " << t.name << (t.cls == ToolClass::Job ? " (long-running job)" : "") << "\n"
           << t.description << "\n";
         if (t.params.empty()) s << "Parameters: none\n";
@@ -97,10 +105,11 @@ std::string Registry::prompt_docs() const {
     return s.str();
 }
 
-std::string Registry::harmony_docs() const {
+std::string Registry::harmony_docs(const AllowSet& allow) const {
     std::ostringstream s;
     s << "# Tools\n\n## functions\n\nnamespace functions {\n\n";
     for (const auto& t : tools_) {
+        if (!permitted(allow, t.name)) continue;
         s << "// " << t.description << "\n";
         if (t.params.empty()) {
             s << "type " << t.name << " = () => any;\n\n";

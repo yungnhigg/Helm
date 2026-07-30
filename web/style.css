@@ -516,3 +516,6 @@ fieldset { margin: 0; padding: 0; border: 0; }
 .ctx-meter.warn .ctx-text { color: #e0a03a; }
 .ctx-meter.over .ctx-fill { background: #e0533a; }
 .ctx-meter.over .ctx-text { color: #e0533a; }
+
+.perm-hint { margin: 8px 2px 0; color: var(--muted); font-size: 10px; line-height: 1.5; }
+.perm-preset.selected { background: var(--accent-soft); border-color: rgba(239,35,60,.45); }

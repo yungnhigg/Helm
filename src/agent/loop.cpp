@@ -137,12 +137,35 @@ void AgentLoop::user_turn(const std::string& session_id, const std::string& text
     });
 }
 
+Registry::AllowSet AgentLoop::allowed_tools_for(const TurnOptions& options, bool& memory_ok) const {
+    memory_ok = true;
+    if (options.agent_id.empty()) return {};   // Chat mode: unrestricted.
+    AgentProfile agent;
+    if (!workspace_.get_agent(options.agent_id, agent)) return {};
+    // Legacy agent created before permissions existed: full access, unchanged.
+    if (!agent.permissions_configured) return {};
+
+    Registry::AllowSet allow(agent.allowed_tools.begin(), agent.allowed_tools.end());
+    // task_complete is control flow, not a capability: without it an autonomous
+    // run cannot end. Always reachable regardless of the profile.
+    allow.insert("task_complete");
+    // Memory injection is a read: if recall_memory is not permitted, durable
+    // memory must not be silently pushed into the system prompt either.
+    memory_ok = allow.count("recall_memory") > 0;
+    return allow;
+}
+
 std::string AgentLoop::workspace_prompt(const TurnOptions& options, const std::string& query) const {
     std::ostringstream out;
     // Global long-term memory leads, so durable facts frame everything that
-    // follows rather than being buried under retrieval context.
-    const std::string mem = memory_.prompt_block();
-    if (!mem.empty()) out << mem << "\n\n";
+    // follows rather than being buried under retrieval context. A restricted
+    // agent without memory-read permission does not receive it at all.
+    bool memory_ok = true;
+    (void)allowed_tools_for(options, memory_ok);
+    if (memory_ok) {
+        const std::string mem = memory_.prompt_block();
+        if (!mem.empty()) out << mem << "\n\n";
+    }
     out << "Mode: " << options.mode << ". Reasoning effort: " << options.effort << ". ";
     if (options.effort == "low") out << "Prefer a fast, compact answer.";
     else if (options.effort == "high") out << "Check assumptions and use the available token budget, but return only the answer, not private chain-of-thought.";
@@ -338,7 +361,9 @@ std::vector<Message> AgentLoop::trimmed_history(const std::string& session_id,
         return harmony ? pb.build_harmony(msgs, tool_docs, extra_system, effort)
                        : pb.build(msgs, tool_docs, extra_system);
     };
-    if (cfg_.enable_compression && !msgs.empty() && eng_.count_tokens_sync(build()) > budget) {
+    const double frac = cfg_.compress_at_fraction;
+    const int compact_at = (frac > 0.0 && frac < 1.0) ? static_cast<int>(budget * frac) : budget;
+    if (cfg_.enable_compression && !msgs.empty() && eng_.count_tokens_sync(build()) > compact_at) {
         compress_history(session_id, msgs, harmony);
     }
     // Safety net: still over budget (compression disabled, failed, or the
@@ -377,15 +402,30 @@ void AgentLoop::run_turn(const std::string& session_id, const TurnOptions& optio
     // not trained on wastes the reasoning it does natively. Every other model
     // keeps the strict grammar.
     const bool harmony = eng_.harmony_mode();
-    const std::string grammar = harmony ? std::string{} : agent_grammar_;
-    const std::string& docs = harmony ? harmony_docs_ : tool_docs_;
+    // Per-agent permissions: when an agent restricts its tools, regenerate docs
+    // and grammar from only the permitted set so the model cannot see or emit a
+    // denied tool. An unrestricted result reuses the cached full-registry docs.
+    bool memory_ok_unused = true;
+    const Registry::AllowSet allow = allowed_tools_for(options, memory_ok_unused);
+    std::string docs_owned, grammar_owned;
+    if (!allow.empty()) {
+        docs_owned = harmony ? reg_.harmony_docs(allow) : reg_.prompt_docs(allow);
+        if (!harmony) {
+            GrammarOptions gopt{cfg_.enable_thinking, true};
+            grammar_owned = build_agent_grammar(reg_.grammar_specs(allow), gopt);
+        }
+    }
+    const std::string grammar = harmony ? std::string{}
+                                        : (allow.empty() ? agent_grammar_ : grammar_owned);
+    const std::string& docs = allow.empty() ? (harmony ? harmony_docs_ : tool_docs_)
+                                            : docs_owned;
 
     const int token_limit = generation_limit(options.effort);
-    run_call_signatures_.clear();
-    const int iteration_budget = options.autonomous
-        ? std::max(4, cfg_.max_autonomous_iterations)
-        : cfg_.max_agent_iterations;
-    for (int iter = 0; iter < iteration_budget; ++iter) {
+    // No iteration cap. A run ends by task_complete, the user's Stop, an error,
+    // or context compaction failing - not by an arbitrary count. A perpetual run
+    // must not clear its cross-batch dedup, or a fresh batch resurveys the last.
+    if (!options.perpetual) run_call_signatures_.clear();
+    for (int iter = 0; ; ++iter) {
         const auto current = store_.messages(session_id);
         std::string query;
         for (auto it = current.rbegin(); it != current.rend(); ++it) {
@@ -462,18 +502,14 @@ void AgentLoop::run_turn(const std::string& session_id, const TurnOptions& optio
             // marker on the tool rail and keep going. This is enforced here
             // rather than requested in the prompt, because the previous
             // behaviour returned regardless of what the prompt said.
-            const int left = iteration_budget - iter - 1;
-            if (left <= 0) {
-                if (options.perpetual) { start_next_batch(options); return; }
-                break;
+            if (stop_requested_.load()) {
+                send_for(session_id, "note", {{"text", "Stopped."}});
+                return;
             }
             store_.append(session_id, {Role::Tool,
                 "Progress noted. The task is not finished until you call task_complete. "
-                "Continue with the next concrete step now: issue a tool_call. You have " +
-                std::to_string(left) + " step(s) remaining before this run is cut off.",
+                "Continue with the next concrete step now by issuing a tool_call.",
                 "run_controller"});
-            send_for(session_id, "note", {{"text", "Continuing autonomous run (" +
-                std::to_string(left) + " step(s) left)"}});
             continue;
         }
 
@@ -519,6 +555,39 @@ void AgentLoop::run_turn(const std::string& session_id, const TurnOptions& optio
         Message call{Role::Assistant, args.dump(), name};
         if (harmony) call.harmony_raw = r.text;
         store_.append(session_id, call);
+
+        // Defence in depth: even though a denied tool never appears in the docs
+        // or grammar, a Harmony model can still emit an arbitrary name. Re-check
+        // permission at dispatch so a forged call is refused, not run.
+        if (!allow.empty() && allow.count(name) == 0) {
+            const std::string denied = "error: tool '" + name + "' is not permitted for this agent.";
+            log("denied tool by permission: " + name);
+            store_.append(session_id, {Role::Tool, denied, name});
+            send_for(session_id, "tool_result", {{"name", name}, {"result", denied}});
+            continue;
+        }
+
+        // Repeat-breaker: an identical call cannot yield a new result. Key on the
+        // identifying argument (url or query), not the whole blob, so an
+        // incidental field difference does not slip a repeat through.
+        if (options.autonomous) {
+            std::string ident = args.value("url", std::string());
+            if (ident.empty()) ident = args.value("query", std::string());
+            if (ident.empty()) ident = args.dump();
+            const std::string signature = name + " " + ident;
+            if (run_call_signatures_.size() > 5000) run_call_signatures_.clear();
+            if (std::count(run_call_signatures_.begin(), run_call_signatures_.end(), signature) >= 1) {
+                const std::string refusal =
+                    "error: this exact call was already made in this run and cannot return anything "
+                    "new. If the earlier result was empty or a 404, that is the answer. Record it as "
+                    "unavailable and move to a DIFFERENT url or query. Never guess repository URLs.";
+                log("refused repeat tool_call: " + signature);
+                store_.append(session_id, {Role::Tool, refusal, name});
+                send_for(session_id, "tool_result", {{"name", name}, {"result", refusal}});
+                continue;
+            }
+            run_call_signatures_.push_back(signature);
+        }
 
         const Tool* tool = reg_.find(name);
         if (!tool) {

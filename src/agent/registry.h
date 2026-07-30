@@ -8,6 +8,7 @@
 #include <functional>
 #include <string>
 #include <vector>
+#include <unordered_set>
 
 namespace lar {
 
@@ -45,11 +46,15 @@ public:
     const Tool* find(const std::string& name) const;
     const std::vector<Tool>& all() const { return tools_; }
 
-    std::vector<GrammarTool> grammar_specs() const;
-    // Markdown tool documentation appended to the system prompt.
-    std::string prompt_docs() const;
-    // GPT-OSS/Harmony TypeScript-style function declarations.
-    std::string harmony_docs() const;
+    // An empty allow-set means "all tools" (Chat mode and legacy agents). A
+    // non-empty set restricts generation to exactly those names, so a permission
+    // system controls what the model can even see and emit, not just what it is
+    // told not to do. The three generators share one predicate so grammar,
+    // prompt docs, and Harmony declarations can never expose different sets.
+    using AllowSet = std::unordered_set<std::string>;
+    std::vector<GrammarTool> grammar_specs(const AllowSet& allow = {}) const;
+    std::string prompt_docs(const AllowSet& allow = {}) const;
+    std::string harmony_docs(const AllowSet& allow = {}) const;
 
 private:
     std::vector<Tool> tools_;

@@ -146,6 +146,15 @@
         <label id="agent-config-row" class="full" hidden><span>Task configuration</span><div class="file-choice"><button id="choose-agent-config" class="secondary">Choose config file</button><span id="agent-config-name">No file selected</span></div></label>
         <label id="site-url-row" class="full" hidden><span>Starting website</span><input id="site-url" type="url" placeholder="https://example.com/docs"></label>
         <fieldset class="full"><legend>RAG files</legend><div id="agent-rag-options" class="check-grid"></div></fieldset>
+        <fieldset class="full"><legend>Tool permissions</legend>
+          <div class="preset-row">
+            <button type="button" class="secondary perm-preset" data-perm="recommended">Recommended</button>
+            <button type="button" class="secondary perm-preset" data-perm="readonly">Read only</button>
+            <button type="button" class="secondary perm-preset" data-perm="full">Full access</button>
+          </div>
+          <div id="agent-perm-options" class="check-grid"></div>
+          <p class="perm-hint" id="perm-hint">Recommended enables web, file read/write, memory, documents, and archive; leaves process execution and desktop control off.</p>
+        </fieldset>
       </div>
 
       <div class="modal-actions"><button id="cancel-task" class="ghost">Cancel</button><button id="create-agent" class="primary">Create agent</button></div>

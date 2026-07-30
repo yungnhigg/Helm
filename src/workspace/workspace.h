@@ -30,6 +30,11 @@ struct AgentProfile {
     std::string config_resource_id;
     std::string site_url;
     std::vector<std::string> rag_ids;
+    // Per-agent tool permissions. allowed_tools holds exact registered tool
+    // names; permissions_configured distinguishes a deliberately-empty allow-set
+    // from a legacy agent that predates permissions (which stays full-access).
+    std::vector<std::string> allowed_tools;
+    bool permissions_configured = false;
 };
 
 class WorkspaceStore {

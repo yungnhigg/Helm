@@ -177,6 +177,17 @@ if(BUILD_TESTING)
     target_include_directories(helm_harmony_tests PRIVATE src third_party)
     add_test(NAME helm_harmony_tests COMMAND helm_harmony_tests)
 
+    add_executable(helm_registry_tests
+        tests/test_registry.cpp
+        src/agent/registry.cpp
+    )
+    target_compile_features(helm_registry_tests PRIVATE cxx_std_20)
+    if(MSVC)
+        target_compile_options(helm_registry_tests PRIVATE /utf-8)
+    endif()
+    target_include_directories(helm_registry_tests PRIVATE src third_party)
+    add_test(NAME helm_registry_tests COMMAND helm_registry_tests)
+
     add_executable(helm_stream_filter_tests
         tests/test_stream_filter.cpp
     )

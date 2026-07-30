@@ -56,6 +56,8 @@ void WorkspaceStore::load() {
             p.config_resource_id = a.value("config_resource_id", "");
             p.site_url = a.value("site_url", "");
             p.rag_ids = a.value("rag_ids", std::vector<std::string>{});
+            p.allowed_tools = a.value("allowed_tools", std::vector<std::string>{});
+            p.permissions_configured = a.value("permissions_configured", false);
             if (!p.id.empty()) agents_.push_back(std::move(p));
         }
     } catch (const std::exception& e) {
@@ -72,7 +74,8 @@ void WorkspaceStore::persist_locked() const {
     j["agents"] = json::array();
     for (const auto& a : agents_) j["agents"].push_back({
         {"id", a.id}, {"name", a.name}, {"type", a.type}, {"model_id", a.model_id},
-        {"model_ids", a.model_ids}, {"coordinator", a.coordinator}, {"config_resource_id", a.config_resource_id}, {"site_url", a.site_url}, {"rag_ids", a.rag_ids}
+        {"model_ids", a.model_ids}, {"coordinator", a.coordinator}, {"config_resource_id", a.config_resource_id}, {"site_url", a.site_url}, {"rag_ids", a.rag_ids},
+        {"allowed_tools", a.allowed_tools}, {"permissions_configured", a.permissions_configured}
     });
     if (!atomic_write_text(utf8_to_wide(root_ + "workspace.json"), j.dump(1)))
         log("failed to persist workspace metadata");
@@ -142,6 +145,8 @@ AgentProfile WorkspaceStore::create_agent(const json& j) {
     a.config_resource_id = j.value("config_resource_id", "");
     a.site_url = j.value("site_url", "");
     a.rag_ids = j.value("rag_ids", std::vector<std::string>{});
+    a.allowed_tools = j.value("allowed_tools", std::vector<std::string>{});
+    a.permissions_configured = j.value("permissions_configured", false);
     if (a.type != "local" && a.type != "task" && a.type != "webscraper") a.type = "local";
     std::lock_guard lk(m_);
     agents_.push_back(a);
@@ -263,7 +268,8 @@ json WorkspaceStore::snapshot() const {
     json a = json::array();
     for (const auto& x : agents_) a.push_back({
         {"id", x.id}, {"name", x.name}, {"type", x.type}, {"model_id", x.model_id},
-        {"model_ids", x.model_ids}, {"coordinator", x.coordinator}, {"config_resource_id", x.config_resource_id}, {"site_url", x.site_url}, {"rag_ids", x.rag_ids}
+        {"model_ids", x.model_ids}, {"coordinator", x.coordinator}, {"config_resource_id", x.config_resource_id}, {"site_url", x.site_url}, {"rag_ids", x.rag_ids},
+        {"allowed_tools", x.allowed_tools}, {"permissions_configured", x.permissions_configured}
     });
     return {{"resources", r}, {"agents", a}};
 }

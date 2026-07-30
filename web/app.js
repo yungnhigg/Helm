@@ -926,6 +926,8 @@ function openTaskModal() {
   for (const card of document.querySelectorAll('.type-card')) card.classList.toggle('selected', card.dataset.agentType === 'local');
   updateTaskTypeFields();
   renderAgentRagOptions();
+  renderPermOptions(PERM_PRESETS.recommended);
+  for (const b of document.querySelectorAll('.perm-preset')) b.classList.toggle('selected', b.dataset.perm === 'recommended');
   $('task-modal').hidden = false;
 }
 
@@ -937,6 +939,54 @@ function updateTaskTypeFields() {
   if (state.selectedAgentType === 'local') $('agent-name').value = 'Local operator';
   if (state.selectedAgentType === 'task') $('agent-name').value = 'Task bot';
   if (state.selectedAgentType === 'webscraper') $('agent-name').value = 'Site crawler';
+}
+
+
+// Permission groups resolve to the EXACT tool names the registry registers.
+// If a tool is renamed in C++, its entry here must change too, or the group
+// silently grants nothing. task_complete is intentionally absent: the loop
+// always injects it so an autonomous run keeps a reachable exit.
+const PERM_GROUPS = [
+  { id: 'web',      label: 'Web & GitHub search',   tools: ['search_web','fetch_web_page','crawl_site','github_search'] },
+  { id: 'archive',  label: 'Offline archive search', tools: ['search_archive'] },
+  { id: 'loopstate',label: 'Loop state (perpetual)', tools: ['archive_seen'] },
+  { id: 'fileread', label: 'Read files',            tools: ['read_text_file','list_directory'] },
+  { id: 'filewrite',label: 'Write files',           tools: ['write_text_file'] },
+  { id: 'docs',     label: 'Read documents',        tools: ['extract_document'] },
+  { id: 'memread',  label: 'Read memory',           tools: ['recall_memory'] },
+  { id: 'memwrite', label: 'Write memory',          tools: ['remember','forget'] },
+  { id: 'images',   label: 'Generate images',       tools: ['generate_image'] },
+  { id: 'voice',    label: 'Speak',                 tools: ['speak_text'] },
+  { id: 'deskview', label: 'Desktop screenshot',    tools: ['desktop_screenshot'] },
+  { id: 'deskctl',  label: 'Desktop control',       tools: ['desktop_click','desktop_type','desktop_hotkey'] },
+  { id: 'process',  label: 'Run processes',         tools: ['run_process'] },
+  { id: 'utils',    label: 'Utilities',             tools: ['get_time','roll_dice'] },
+];
+const PERM_PRESETS = {
+  recommended: ['web','archive','loopstate','fileread','filewrite','docs','memread','memwrite','utils'],
+  readonly:    ['web','archive','fileread','docs','memread','utils'],
+  full:        PERM_GROUPS.map(g => g.id),
+};
+function renderPermOptions(presetGroups) {
+  const box = $('agent-perm-options');
+  if (!box) return;
+  const on = new Set(presetGroups);
+  box.innerHTML = '';
+  for (const g of PERM_GROUPS) {
+    const id = 'perm-' + g.id;
+    const label = document.createElement('label');
+    const cb = document.createElement('input');
+    cb.type = 'checkbox'; cb.value = g.id; cb.id = id; cb.checked = on.has(g.id);
+    const span = document.createElement('span'); span.textContent = g.label;
+    label.append(cb, span); box.append(label);
+  }
+}
+function selectedAllowedTools() {
+  const box = $('agent-perm-options');
+  const chosen = new Set([...box.querySelectorAll('input:checked')].map(i => i.value));
+  const tools = [];
+  for (const g of PERM_GROUPS) if (chosen.has(g.id)) tools.push(...g.tools);
+  return tools;
 }
 
 function createAgent() {
@@ -955,7 +1005,9 @@ function createAgent() {
       model_id: modelId,
       config_resource_id: state.pendingConfig?.id || '',
       site_url: siteUrl,
-      rag_ids: ragIds
+      rag_ids: ragIds,
+      allowed_tools: selectedAllowedTools(),
+      permissions_configured: true
     }
   });
 }
@@ -1300,6 +1352,12 @@ if ($('memory-text')) {
 }
 
 $('add-agent').onclick = openTaskModal;
+for (const btn of document.querySelectorAll('.perm-preset')) {
+  btn.onclick = () => {
+    renderPermOptions(PERM_PRESETS[btn.dataset.perm] || PERM_PRESETS.recommended);
+    for (const b of document.querySelectorAll('.perm-preset')) b.classList.toggle('selected', b === btn);
+  };
+}
 $('close-task').onclick = closeTaskModal;
 $('cancel-task').onclick = closeTaskModal;
 $('create-agent').onclick = createAgent;

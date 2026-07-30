@@ -541,6 +541,18 @@ void Bridge::on_web_message(const std::wstring& raw) {
         options.agent_id = agent_id;
         options.autonomous = true;
         options.perpetual = j.value("perpetual", false);
+        if (options.perpetual && agent.permissions_configured) {
+            const bool has_seen = std::find(agent.allowed_tools.begin(),
+                agent.allowed_tools.end(), std::string("archive_seen")) != agent.allowed_tools.end();
+            if (!has_seen) {
+                emit({{"type", "error"}, {"message",
+                    "This agent cannot start a Perpetual Loop: it lacks the Loop state permission "
+                    "(archive_seen). Without it, each fresh-context batch would resurvey the same "
+                    "items. Recreate the agent with Loop state enabled (the Recommended preset "
+                    "includes it)."}});
+                return;
+            }
+        }
         loop_.clear_stop();
         const std::string kickoff = j.value("instruction", std::string(
             "Begin the task defined in your active configuration now. Do not reply with a plan or "

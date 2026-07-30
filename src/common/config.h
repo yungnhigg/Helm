@@ -56,6 +56,10 @@ struct Config {
     // model and replaced with one summary record, instead of silently dropping
     // the oldest turns.
     bool enable_compression = true;
+    // Compact when the prompt reaches this fraction of budget, instead of waiting
+    // for overflow. 0.80 = fold old turns at 80% full. 0 or >=1 disables the
+    // early trigger (compact-on-overflow only).
+    double compress_at_fraction = 0.80;
     int compress_keep_recent = 8;     // most recent messages kept verbatim
     int compress_summary_tokens = 448; // generation cap for the summary itself
 

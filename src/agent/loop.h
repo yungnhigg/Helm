@@ -68,6 +68,10 @@ private:
     // Cap a tool result so no single one can swallow the context window.
     std::string clamp_tool_result(const std::string& text, const std::string& tool_name) const;
     std::string workspace_prompt(const TurnOptions& options, const std::string& query) const;
+    // Resolve an agent's allowed tool set. Empty result = unrestricted (Chat mode
+    // and legacy agents whose permissions were never configured). task_complete
+    // is always injected so an autonomous run keeps a reachable exit.
+    Registry::AllowSet allowed_tools_for(const TurnOptions& options, bool& memory_ok) const;
     void send_for(const std::string& session_id, const char* type, nlohmann::json j = {}) const;
     void schedule_followup(const std::string& session_id, TurnOptions options);
     void start_next_batch(TurnOptions options);

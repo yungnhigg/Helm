@@ -64,18 +64,36 @@ void register_tool_files(Registry& r, const Config& cfg) {
 
     r.add({
         "read_text_file",
-        "Read a local text or source file. Binary data is not decoded.",
+        "Read a local text or source file, a page at a time. Returns up to max_chars bytes starting "
+        "at offset. If the file is larger, the result ends with a cursor line telling you the exact "
+        "offset to pass next. Read pages in sequence rather than requesting a huge max_chars, which "
+        "would overflow the context. Binary data is not decoded.",
         {{"path", ParamType::String, "Absolute or user-provided file path"},
-         {"max_chars", ParamType::Integer, "Maximum bytes to read, from 1 to 200000"}},
+         {"max_chars", ParamType::Integer, "Bytes to return this page, 1 to 60000. 8000-16000 is a good page size."},
+         {"offset", ParamType::Integer, "Byte offset to start at. 0 for the first page; use the value from the previous page's cursor line."}},
         ToolClass::Sync,
         [](const nlohmann::json& a) {
             const fs::path p = utf8_to_wide(a.at("path").get<std::string>());
-            int limit = std::clamp(a.at("max_chars").get<int>(), 1, 200000);
-            std::ifstream f(p, std::ios::binary);
+            const int limit = std::clamp(a.value("max_chars", 16000), 1, 60000);
+            const long long offset = std::max<long long>(0, a.value("offset", 0));
+            std::ifstream f(p, std::ios::binary | std::ios::ate);
             if (!f) return std::string("error: cannot open file");
+            const long long total = static_cast<long long>(f.tellg());
+            if (offset >= total && total > 0)
+                return std::string("error: offset ") + std::to_string(offset) +
+                       " is past end of file (" + std::to_string(total) + " bytes)";
+            f.seekg(offset, std::ios::beg);
             std::string text(static_cast<size_t>(limit), '\0');
             f.read(text.data(), limit);
             text.resize(static_cast<size_t>(f.gcount()));
+            const long long next = offset + static_cast<long long>(text.size());
+            // Paging cursor: only when more remains. A large file is never
+            // returned whole; the model is told precisely how to continue.
+            if (next < total) {
+                text += "\n\n[page ends at byte " + std::to_string(next) + " of " +
+                        std::to_string(total) + ". To continue, call read_text_file again with "
+                        "offset=" + std::to_string(next) + ".]";
+            }
             return text;
         },
         {}

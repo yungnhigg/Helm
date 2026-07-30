@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""External open-source tool adapter used by Helm 1.8.1.
+"""External open-source tool adapter used by Helm 1.9.0.
 
 Each subcommand writes a compact UTF-8 result to stdout and diagnostics to
 stderr. The C++ host owns timeouts/cancellation and never executes arbitrary
@@ -117,7 +117,7 @@ class _BrowserPool:
             page = browser.new_page(
                 viewport={"width": 1440, "height": 1000},
                 user_agent=("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
-                            "HelmLocalAI/1.8.1.0 Chrome/126 Safari/537.36"),
+                            "HelmLocalAI/1.9.0.0 Chrome/126 Safari/537.36"),
             )
             # Budget split: most of it on first paint, a short tail for late XHR.
             page.goto(url, wait_until="domcontentloaded", timeout=int(budget_seconds * 1000 * 0.7))
@@ -182,7 +182,7 @@ def _static_fetch(url: str, max_chars: int, client=None, timeout: float = 12.0) 
         return {"url": url, "text": "", "method": "static", "error": f"httpx unavailable: {exc}"}
     headers = {
         "User-Agent": ("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
-                       "HelmLocalAI/1.8.1.0 Chrome/126 Safari/537.36"),
+                       "HelmLocalAI/1.9.0.0 Chrome/126 Safari/537.36"),
         "Accept": "text/html,application/xhtml+xml,text/plain;q=0.9,*/*;q=0.6",
         "Accept-Language": "en-US,en;q=0.8",
     }
@@ -303,7 +303,7 @@ def github_search(args: argparse.Namespace) -> None:
     headers = {
         "Accept": "application/vnd.github+json",
         "X-GitHub-Api-Version": "2022-11-28",
-        "User-Agent": "HelmLocalAI/1.8.1",
+        "User-Agent": "HelmLocalAI/1.9.0",
     }
     # An optional token lifts the rate limit from 10/min to 30/min. Read-only.
     token = os.environ.get("GITHUB_TOKEN", "").strip()
@@ -361,7 +361,7 @@ def web_search(args: argparse.Namespace) -> None:
     started = time.time()
     headers = {
         "User-Agent": ("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
-                       "HelmLocalAI/1.8.1.0 Chrome/126 Safari/537.36"),
+                       "HelmLocalAI/1.9.0.0 Chrome/126 Safari/537.36"),
         "Accept-Language": "en-US,en;q=0.8",
     }
     url = "https://html.duckduckgo.com/html/?" + urllib.parse.urlencode({"q": args.query})
