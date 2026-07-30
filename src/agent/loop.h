@@ -89,6 +89,9 @@ private:
     std::atomic<int> pending_followups_{0};
     // Set by a stop_agent message; checked between perpetual batches.
     std::atomic<bool> stop_requested_{false};
+    // Signatures of tool calls already made in the current run. An autonomous
+    // loop otherwise repeats an identical failing call until the budget is gone.
+    std::vector<std::string> run_call_signatures_;
 };
 
 } // namespace lar

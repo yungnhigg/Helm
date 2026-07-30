@@ -60,8 +60,10 @@ void AgentLoop::start_next_batch(TurnOptions options) {
     if (stop_requested_.load()) { log("perpetual run stopped by user"); return; }
     options.batch_index += 1;
     const std::string sid = store_.create();
-    emit({{"type", "agent_opened"}, {"agent_id", options.agent_id},
-          {"session_id", sid}, {"autorun", true}, {"batch", options.batch_index}});
+    // send_for is the loop's channel to the UI; emit is a Bridge-only method.
+    // send_for stamps session_id, so the payload omits it.
+    send_for(sid, "agent_opened", {{"agent_id", options.agent_id},
+             {"autorun", true}, {"batch", options.batch_index}});
     send_for(sid, "note", {{"text", "Starting batch " + std::to_string(options.batch_index + 1) +
              " with a fresh context. Already-processed items are remembered on disk."}});
     log("perpetual run: starting batch " + std::to_string(options.batch_index + 1));
@@ -379,6 +381,7 @@ void AgentLoop::run_turn(const std::string& session_id, const TurnOptions& optio
     const std::string& docs = harmony ? harmony_docs_ : tool_docs_;
 
     const int token_limit = generation_limit(options.effort);
+    run_call_signatures_.clear();
     const int iteration_budget = options.autonomous
         ? std::max(4, cfg_.max_autonomous_iterations)
         : cfg_.max_agent_iterations;
@@ -490,6 +493,23 @@ void AgentLoop::run_turn(const std::string& session_id, const TurnOptions& optio
             log("autonomous run completed after " + std::to_string(iter + 1) + " iteration(s)");
             if (options.perpetual) { start_next_batch(options); }
             return;
+        }
+        // Refuse a verbatim repeat in an autonomous run: an identical call cannot
+        // return a different result, and a 404 or empty page IS the answer.
+        if (options.autonomous) {
+            const std::string signature = name + " " + args.dump();
+            if (std::count(run_call_signatures_.begin(), run_call_signatures_.end(), signature) >= 1) {
+                const std::string refusal =
+                    "error: this exact call was already made in this run and cannot return anything "
+                    "new. If the earlier result was empty or a 404, that is the answer: the page or "
+                    "repository does not exist. Record it as unavailable and move to a DIFFERENT url "
+                    "or query. Never construct repository URLs from memory.";
+                log("refused repeat tool_call: " + signature);
+                store_.append(session_id, {Role::Tool, refusal, name});
+                send_for(session_id, "tool_result", {{"name", name}, {"result", refusal}});
+                continue;
+            }
+            run_call_signatures_.push_back(signature);
         }
         send_for(session_id, "tool_call",
                  {{"name", name}, {"args", args}, {"note", note}, {"thinking", thinking}});
