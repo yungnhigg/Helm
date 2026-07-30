@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""External open-source tool adapter used by Helm 1.7.0.
+"""External open-source tool adapter used by Helm 1.8.1.
 
 Each subcommand writes a compact UTF-8 result to stdout and diagnostics to
 stderr. The C++ host owns timeouts/cancellation and never executes arbitrary
@@ -117,7 +117,7 @@ class _BrowserPool:
             page = browser.new_page(
                 viewport={"width": 1440, "height": 1000},
                 user_agent=("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
-                            "HelmLocalAI/1.7.0 Chrome/126 Safari/537.36"),
+                            "HelmLocalAI/1.8.1.0 Chrome/126 Safari/537.36"),
             )
             # Budget split: most of it on first paint, a short tail for late XHR.
             page.goto(url, wait_until="domcontentloaded", timeout=int(budget_seconds * 1000 * 0.7))
@@ -182,7 +182,7 @@ def _static_fetch(url: str, max_chars: int, client=None, timeout: float = 12.0) 
         return {"url": url, "text": "", "method": "static", "error": f"httpx unavailable: {exc}"}
     headers = {
         "User-Agent": ("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
-                       "HelmLocalAI/1.7.0 Chrome/126 Safari/537.36"),
+                       "HelmLocalAI/1.8.1.0 Chrome/126 Safari/537.36"),
         "Accept": "text/html,application/xhtml+xml,text/plain;q=0.9,*/*;q=0.6",
         "Accept-Language": "en-US,en;q=0.8",
     }
@@ -250,6 +250,35 @@ _MAX_BROWSER_FALLBACKS = 2
 _SEARCH_DEADLINE_SECONDS = 75.0
 
 
+def seen_list(args: argparse.Namespace) -> None:
+    """Disk-backed dedup for perpetual agent runs.
+
+    An agent that clears context between batches has no memory of what it already
+    processed, so it would resurvey the same repositories forever. This keeps the
+    set of processed identifiers in a file the agent checks and appends to. Two
+    modes: --add writes identifiers, default reads them back.
+    """
+    path = Path(args.file)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    existing = set()
+    if path.exists():
+        existing = {l.strip() for l in path.read_text(encoding="utf-8", errors="replace").splitlines() if l.strip()}
+
+    if args.add:
+        added = [x.strip() for x in args.add.split(",") if x.strip() and x.strip() not in existing]
+        if added:
+            with path.open("a", encoding="utf-8") as f:
+                for x in added:
+                    f.write(x + "\n")
+        print(json.dumps({"added": added, "total_seen": len(existing) + len(added)}, ensure_ascii=False))
+        return
+
+    print(json.dumps({"total_seen": len(existing),
+                      "seen": sorted(existing)[:args.limit],
+                      "note": "Repositories already processed in earlier batches. Skip any repo whose "
+                              "full name appears here; do not survey it again."}, ensure_ascii=False))
+
+
 def github_search(args: argparse.Namespace) -> None:
     """Search GitHub repositories through the REST API.
 
@@ -274,7 +303,7 @@ def github_search(args: argparse.Namespace) -> None:
     headers = {
         "Accept": "application/vnd.github+json",
         "X-GitHub-Api-Version": "2022-11-28",
-        "User-Agent": "HelmLocalAI/1.6",
+        "User-Agent": "HelmLocalAI/1.8.1",
     }
     # An optional token lifts the rate limit from 10/min to 30/min. Read-only.
     token = os.environ.get("GITHUB_TOKEN", "").strip()
@@ -332,7 +361,7 @@ def web_search(args: argparse.Namespace) -> None:
     started = time.time()
     headers = {
         "User-Agent": ("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
-                       "HelmLocalAI/1.7.0 Chrome/126 Safari/537.36"),
+                       "HelmLocalAI/1.8.1.0 Chrome/126 Safari/537.36"),
         "Accept-Language": "en-US,en;q=0.8",
     }
     url = "https://html.duckduckgo.com/html/?" + urllib.parse.urlencode({"q": args.query})
@@ -665,6 +694,12 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--max-results", type=int, default=15)
     p.add_argument("--sort", default="best-match")
     p.set_defaults(func=github_search)
+
+    p = sub.add_parser("seen-list")
+    p.add_argument("--file", required=True)
+    p.add_argument("--add", default="")
+    p.add_argument("--limit", type=int, default=500)
+    p.set_defaults(func=seen_list)
 
     p = sub.add_parser("web-fetch")
     p.add_argument("--url", required=True)

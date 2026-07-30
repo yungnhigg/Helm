@@ -56,6 +56,22 @@ void AgentLoop::send_for(const std::string& session_id, const char* type, json j
 }
 
 
+void AgentLoop::start_next_batch(TurnOptions options) {
+    if (stop_requested_.load()) { log("perpetual run stopped by user"); return; }
+    options.batch_index += 1;
+    const std::string sid = store_.create();
+    emit({{"type", "agent_opened"}, {"agent_id", options.agent_id},
+          {"session_id", sid}, {"autorun", true}, {"batch", options.batch_index}});
+    send_for(sid, "note", {{"text", "Starting batch " + std::to_string(options.batch_index + 1) +
+             " with a fresh context. Already-processed items are remembered on disk."}});
+    log("perpetual run: starting batch " + std::to_string(options.batch_index + 1));
+    const std::string kickoff =
+        "Begin the next batch of your task now. First read your seen-list with archive_seen so you "
+        "do not repeat earlier work, then continue. Do not reply with a plan; make your first tool "
+        "call in this response.";
+    user_turn(sid, kickoff, options);
+}
+
 void AgentLoop::schedule_followup(const std::string& session_id, TurnOptions options) {
     pending_followups_.fetch_add(1);
     enqueue_followup(session_id, std::move(options));
@@ -377,6 +393,21 @@ void AgentLoop::run_turn(const std::string& session_id, const TurnOptions& optio
         std::string prompt = harmony ? pb.build_harmony(history, docs, extra, options.effort)
                                      : pb.build(history, docs, extra);
 
+        const int used = eng_.count_tokens_sync(prompt);
+        const int n_ctx = eng_.n_ctx();
+        const int reserve = cfg_.ctx_reserve_tokens;
+        const int budget = std::max(1, n_ctx - reserve - token_limit);
+        // Fixed cost: the same prompt with an empty history, i.e. system prompt,
+        // tool docs, memory, and workspace context. What is left after that is
+        // all the room the conversation actually has.
+        const std::string fixed_prompt = harmony
+            ? pb.build_harmony({}, docs, extra, options.effort)
+            : pb.build({}, docs, extra);
+        const int fixed = eng_.count_tokens_sync(fixed_prompt);
+        send_for(session_id, "context_usage", {
+            {"used", used}, {"budget", budget}, {"n_ctx", n_ctx},
+            {"reserve", reserve}, {"generation", token_limit}, {"fixed", fixed}});
+
         send_for(session_id, "gen_started");
         StreamFilter filter;
         HarmonyStreamFilter harmony_filter;
@@ -429,7 +460,10 @@ void AgentLoop::run_turn(const std::string& session_id, const TurnOptions& optio
             // rather than requested in the prompt, because the previous
             // behaviour returned regardless of what the prompt said.
             const int left = iteration_budget - iter - 1;
-            if (left <= 0) break;
+            if (left <= 0) {
+                if (options.perpetual) { start_next_batch(options); return; }
+                break;
+            }
             store_.append(session_id, {Role::Tool,
                 "Progress noted. The task is not finished until you call task_complete. "
                 "Continue with the next concrete step now: issue a tool_call. You have " +
@@ -454,6 +488,7 @@ void AgentLoop::run_turn(const std::string& session_id, const TurnOptions& optio
             store_.append(session_id, {Role::Assistant, summary, ""});
             send_for(session_id, "assistant_final", {{"text", summary}, {"thinking", thinking}});
             log("autonomous run completed after " + std::to_string(iter + 1) + " iteration(s)");
+            if (options.perpetual) { start_next_batch(options); }
             return;
         }
         send_for(session_id, "tool_call",

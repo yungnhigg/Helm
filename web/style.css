@@ -499,3 +499,20 @@ fieldset { margin: 0; padding: 0; border: 0; }
 }
 #composer-wrap.agent-active #input::placeholder { color: #9a7a80; }
 .run-agent { flex: 0 0 auto; }
+
+/* ------------------------------------------------ context usage meter */
+.ctx-meter { display: flex; align-items: center; gap: 10px; width: min(1340px, 100%);
+  align-self: center; margin: 0 0 6px; padding: 0 4px; font-size: 10.5px; color: var(--muted); }
+.ctx-bar { position: relative; flex: 1; height: 5px; border-radius: 3px;
+  background: rgba(255,255,255,.06); overflow: hidden; }
+.ctx-fill { position: absolute; left: 0; top: 0; bottom: 0; width: 0%;
+  background: #4c8bf5; transition: width .2s ease, background .2s ease; }
+/* Fixed-cost segment sits under the fill as a darker marker: shows how much of
+   the window is spent before any conversation. */
+.ctx-fixed { position: absolute; left: 0; top: 0; bottom: 0; width: 0%;
+  background: rgba(255,255,255,.16); }
+.ctx-text { flex: 0 0 auto; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.ctx-meter.warn .ctx-fill { background: #e0a03a; }
+.ctx-meter.warn .ctx-text { color: #e0a03a; }
+.ctx-meter.over .ctx-fill { background: #e0533a; }
+.ctx-meter.over .ctx-text { color: #e0533a; }

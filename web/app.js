@@ -170,6 +170,7 @@ const handlers = {
   },
 
   agent_opened(message) {
+    if (message.batch !== undefined) { const b=$('stop-agent'); if(b) b.hidden=false; }
     state.activeSession = message.session_id;
     state.activeAgent = state.agents.find(agent => agent.id === message.agent_id) || null;
     if (state.activeAgent?.model_id && state.activeAgent.model_id !== state.activeModel) {
@@ -294,6 +295,24 @@ const handlers = {
   tool_result(message) {
     if (message.session_id !== state.activeSession) return;
     addToolChip('RESULT', `[${message.name}] ${message.result || ''}`, 'result');
+  },
+
+  context_usage(message) {
+    if (message.session_id && message.session_id !== state.activeSession) return;
+    const meter = $('ctx-meter');
+    if (!meter) return;
+    const used = message.used || 0, budget = message.budget || 1;
+    const nctx = message.n_ctx || budget, fixed = message.fixed || 0;
+    const pctUsed = Math.min(100, Math.round((used / budget) * 100));
+    const pctFixed = Math.min(100, Math.round((fixed / budget) * 100));
+    $('ctx-fill').style.width = pctUsed + '%';
+    $('ctx-fixed').style.width = pctFixed + '%';
+    meter.classList.toggle('warn', pctUsed >= 75 && pctUsed < 100);
+    meter.classList.toggle('over', pctUsed >= 100);
+    const k = n => n >= 1000 ? (n / 1000).toFixed(n >= 10000 ? 0 : 1) + 'k' : String(n);
+    $('ctx-text').textContent =
+      `${k(used)} / ${k(budget)} tokens (${pctUsed}%) · ${k(fixed)} fixed · ${k(nctx)} ctx`;
+    meter.hidden = false;
   },
 
   job_update(message) {
@@ -484,11 +503,18 @@ function renderAgents() {
     run.textContent = '▶ Run';
     run.title = 'Open a new session and start the task immediately';
     run.onclick = () => post({ type: 'run_agent', id: agent.id, effort: $('effort')?.value || 'medium' });
+    // Perpetual: restart with a fresh context after each batch, forever, until
+    // Stop. Distinct from Run so it is never triggered by accident.
+    const loop = document.createElement('button');
+    loop.className = 'primary run-agent';
+    loop.textContent = '\u221E Loop';
+    loop.title = 'Run forever: fresh context each batch, dedup on disk. Stop from the top bar.';
+    loop.onclick = () => { post({ type: 'run_agent', id: agent.id, perpetual: true, effort: $('effort')?.value || 'high' }); const b=$('stop-agent'); if(b) b.hidden=false; };
     const remove = document.createElement('button');
     remove.className = 'ghost';
     remove.textContent = 'Delete';
     remove.onclick = () => post({ type: 'delete_agent', id: agent.id });
-    actions.append(run, open, remove);
+    actions.append(run, loop, open, remove);
     card.append(head, actions);
     grid.append(card);
   }
@@ -1206,6 +1232,7 @@ function updateMicState(note = '') {
   else $('composer-hint').textContent = 'Enter to send · Shift+Enter for newline';
 }
 
+const _stopBtn = $('stop-agent'); if (_stopBtn) _stopBtn.onclick = () => { post({ type: 'stop_agent' }); _stopBtn.hidden = true; };
 $('mode-chat').onclick = () => { state.activeAgent = null; syncComposerAgent(); setMode('chat'); };
 $('mode-agent').onclick = () => { state.activeAgent = null; syncComposerAgent(); setMode('agent'); };
 $('back-agents').onclick = () => { state.activeAgent = null; showAgentDashboard(); };

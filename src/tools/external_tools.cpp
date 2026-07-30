@@ -227,6 +227,28 @@ void register_external_tools(Registry& r, const Config& cfg) {
     const Config* c = &cfg;
 
     r.add({
+        "archive_seen",
+        "Track which items an ongoing run has already processed, so a perpetual run does not repeat "
+        "work after its context is cleared. Call with add set to a comma-separated list of identifiers "
+        "(e.g. repository full names) to record them; call with add empty to read back everything "
+        "recorded so far and skip anything already in the list.",
+        {{"file", ParamType::String, "Absolute path to the seen-list file, e.g. F:\\AgentScratch\\_seen.txt"},
+         {"add", ParamType::String, "Comma-separated identifiers to record, or empty to read the list"}},
+        ToolClass::Sync,
+        [c](const nlohmann::json& a) -> std::string {
+            const std::string python = c->resolved_tool_python();
+            if (!fs::exists(utf8_to_wide(python)))
+                return std::string("error: Python tool runtime not found. Run install_helm_tools.cmd.");
+            std::vector<std::wstring> args{helper_script(), L"seen-list",
+                L"--file", utf8_to_wide(a.at("file").get<std::string>()),
+                L"--add", utf8_to_wide(a.value("add", std::string()))};
+            auto res = run_process_capture(utf8_to_wide(python), args, L"", 30, nullptr);
+            return require_success(res, "seen list");
+        },
+        {}
+    });
+
+    r.add({
         "github_search",
         "Search GitHub repositories and get verified details back: real URL, star count, license, "
         "last-push date, primary language, archived flag, open issue count, and topics. ALWAYS prefer "

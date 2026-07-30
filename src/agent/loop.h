@@ -31,6 +31,12 @@ struct TurnOptions {
     // is spent. Prompting a model not to stop does not work, because the C++
     // returns on a reply no matter what the model was told.
     bool autonomous = false;
+    // Perpetual run: when the model calls task_complete or the iteration budget
+    // is spent, start a fresh session with empty context and run the same agent
+    // again, indefinitely, until the user stops it. Dedup lives on disk (the
+    // archive_seen tool), so clearing context loses no progress.
+    bool perpetual = false;
+    int batch_index = 0;
 };
 
 class AgentLoop {
@@ -45,6 +51,10 @@ public:
         return busy_.load() || pending_followups_.load() > 0 || jobs_.active_count() > 0;
     }
     void cancel_job(int id) { jobs_.cancel(id); }
+    // Stop a perpetual run cleanly at the next batch boundary. The current batch
+    // finishes; no new one starts.
+    void request_stop() { stop_requested_.store(true); }
+    void clear_stop() { stop_requested_.store(false); }
 
 private:
     void run_turn(const std::string& session_id, const TurnOptions& options);
@@ -60,6 +70,7 @@ private:
     std::string workspace_prompt(const TurnOptions& options, const std::string& query) const;
     void send_for(const std::string& session_id, const char* type, nlohmann::json j = {}) const;
     void schedule_followup(const std::string& session_id, TurnOptions options);
+    void start_next_batch(TurnOptions options);
     void enqueue_followup(const std::string& session_id, TurnOptions options);
     int generation_limit(const std::string& effort) const;
 
@@ -76,6 +87,8 @@ private:
     std::string harmony_docs_;
     std::atomic<bool> busy_{false};
     std::atomic<int> pending_followups_{0};
+    // Set by a stop_agent message; checked between perpetual batches.
+    std::atomic<bool> stop_requested_{false};
 };
 
 } // namespace lar

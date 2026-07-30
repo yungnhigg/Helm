@@ -43,6 +43,7 @@
           </div>
         </div>
         <div class="topbar-actions">
+        <button id="stop-agent" class="ghost" hidden title="Stop the perpetual run after the current batch">■ Stop loop</button>
           <button id="open-settings" class="icon-btn settings-button" title="Runtime settings">⚙</button>
         <div class="model-status">
           <span id="model-led" class="status-dot"></span>
@@ -64,6 +65,10 @@
         <div id="composer-wrap">
           <div id="slash-menu" class="slash-menu" hidden></div>
           <div id="attachment-strip" class="attachment-strip" hidden></div>
+          <div id="ctx-meter" class="ctx-meter" hidden>
+            <div class="ctx-bar"><span id="ctx-fill" class="ctx-fill"></span><span id="ctx-fixed" class="ctx-fixed" title="Fixed cost: system prompt, tools, memory, workspace"></span></div>
+            <span id="ctx-text" class="ctx-text"></span>
+          </div>
           <div class="composer">
             <textarea id="input" rows="1" placeholder="Message Helm"></textarea>
             <div class="composer-bottom">

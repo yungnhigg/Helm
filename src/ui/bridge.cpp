@@ -511,6 +511,12 @@ void Bridge::on_web_message(const std::wstring& raw) {
     // it. An agent that needs prompting every time is not autonomous, so this
     // opens the session and immediately drives the first turn from the agent's
     // own configuration.
+    if (type == "stop_agent") {
+        loop_.request_stop();
+        emit({{"type", "note"}, {"text", "Stop requested. The current batch will finish, then the run ends."}});
+        return;
+    }
+
     if (type == "run_agent") {
         const std::string agent_id = j.value("id", "");
         AgentProfile agent;
@@ -534,6 +540,8 @@ void Bridge::on_web_message(const std::wstring& raw) {
         options.effort = j.value("effort", std::string("medium"));
         options.agent_id = agent_id;
         options.autonomous = true;
+        options.perpetual = j.value("perpetual", false);
+        loop_.clear_stop();
         const std::string kickoff = j.value("instruction", std::string(
             "Begin the task defined in your active configuration now. Do not reply with a plan or "
             "ask what to do first: make your first tool call in this response."));
