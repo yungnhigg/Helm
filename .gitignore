@@ -1,6 +1,3 @@
 build/
 dist/
 packaging/staging/
-__pycache__/ 
-*.pyc 
-*.patch 

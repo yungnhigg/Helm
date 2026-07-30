@@ -299,15 +299,6 @@ const handlers = {
   job_update(message) {
     if (message.session_id !== state.activeSession) return;
     renderJob(message);
-    // Terminal statuses also land in the transcript. The strip is for progress
-    // and is wiped at end of turn; without this the result of every job the
-    // agent ran was invisible.
-    if (message.status && message.status !== 'running') {
-      const text = String(message.note || '').trim();
-      addToolChip('RESULT',
-        `[${message.name}] job ${message.id} ${message.status}${text ? ': ' + text : ''}`,
-        message.status === 'done' ? 'result' : 'error');
-    }
   },
 
   cancelled(message) {

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""External open-source tool adapter used by Helm 1.6.3.
+"""External open-source tool adapter used by Helm 1.7.0.
 
 Each subcommand writes a compact UTF-8 result to stdout and diagnostics to
 stderr. The C++ host owns timeouts/cancellation and never executes arbitrary
@@ -117,7 +117,7 @@ class _BrowserPool:
             page = browser.new_page(
                 viewport={"width": 1440, "height": 1000},
                 user_agent=("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
-                            "HelmLocalAI/1.6.3 Chrome/126 Safari/537.36"),
+                            "HelmLocalAI/1.7.0 Chrome/126 Safari/537.36"),
             )
             # Budget split: most of it on first paint, a short tail for late XHR.
             page.goto(url, wait_until="domcontentloaded", timeout=int(budget_seconds * 1000 * 0.7))
@@ -182,7 +182,7 @@ def _static_fetch(url: str, max_chars: int, client=None, timeout: float = 12.0) 
         return {"url": url, "text": "", "method": "static", "error": f"httpx unavailable: {exc}"}
     headers = {
         "User-Agent": ("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
-                       "HelmLocalAI/1.6.3 Chrome/126 Safari/537.36"),
+                       "HelmLocalAI/1.7.0 Chrome/126 Safari/537.36"),
         "Accept": "text/html,application/xhtml+xml,text/plain;q=0.9,*/*;q=0.6",
         "Accept-Language": "en-US,en;q=0.8",
     }
@@ -250,6 +250,78 @@ _MAX_BROWSER_FALLBACKS = 2
 _SEARCH_DEADLINE_SECONDS = 75.0
 
 
+def github_search(args: argparse.Namespace) -> None:
+    """Search GitHub repositories through the REST API.
+
+    Returns fully-formed records: real url, stars, license, pushed_at, language,
+    archived flag, open issue count, and the description. This exists because a
+    model told to "find repos and record their details" will otherwise invent
+    plausible-looking github.com/<owner>/<name> URLs from training memory and
+    fetch 404s. Here there is nothing to invent - the API is the source.
+    """
+    try:
+        import httpx
+    except Exception as exc:
+        fail(f"github search dependency missing: {exc}")
+
+    per_page = max(1, min(args.max_results, 50))
+    sort = args.sort if args.sort in ("stars", "updated", "forks", "help-wanted-issues") else "best-match"
+    params = {"q": args.query, "per_page": per_page}
+    if sort != "best-match":
+        params["sort"] = sort
+    params["order"] = "desc"
+
+    headers = {
+        "Accept": "application/vnd.github+json",
+        "X-GitHub-Api-Version": "2022-11-28",
+        "User-Agent": "HelmLocalAI/1.6",
+    }
+    # An optional token lifts the rate limit from 10/min to 30/min. Read-only.
+    token = os.environ.get("GITHUB_TOKEN", "").strip()
+    if token:
+        headers["Authorization"] = f"Bearer {token}"
+
+    try:
+        with httpx.Client(headers=headers, follow_redirects=True, timeout=25) as client:
+            resp = client.get("https://api.github.com/search/repositories", params=params)
+            if resp.status_code == 403 and "rate limit" in resp.text.lower():
+                fail("github rate limit reached (unauthenticated is 10 searches/min). "
+                     "Wait a minute, or set GITHUB_TOKEN. This is not a failure of the query.")
+            resp.raise_for_status()
+            payload = resp.json()
+    except SystemExit:
+        raise
+    except Exception as exc:
+        fail(f"github search failed: {exc}")
+
+    repos = []
+    for item in payload.get("items", []):
+        lic = item.get("license") or {}
+        repos.append({
+            "name": item.get("full_name", ""),
+            "url": item.get("html_url", ""),
+            "description": _compact_text(item.get("description") or "", 300),
+            "stars": item.get("stargazers_count", 0),
+            "language": item.get("language") or "unknown",
+            "license": lic.get("spdx_id") or lic.get("name") or "none",
+            "pushed_at": (item.get("pushed_at") or "")[:10],
+            "open_issues": item.get("open_issues_count", 0),
+            "archived": bool(item.get("archived", False)),
+            "is_fork": bool(item.get("fork", False)),
+            "topics": item.get("topics", [])[:8],
+        })
+
+    print(json.dumps({
+        "query": args.query,
+        "total_found": payload.get("total_count", 0),
+        "returned": len(repos),
+        "repositories": repos,
+        "note": ("These are verified GitHub API results. Use the url and other fields exactly as "
+                 "given - do NOT construct or guess repository URLs. Every field here is authoritative; "
+                 "only fetch a page if you need README detail the description does not cover."),
+    }, ensure_ascii=False))
+
+
 def web_search(args: argparse.Namespace) -> None:
     try:
         import httpx
@@ -260,7 +332,7 @@ def web_search(args: argparse.Namespace) -> None:
     started = time.time()
     headers = {
         "User-Agent": ("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
-                       "HelmLocalAI/1.6.3 Chrome/126 Safari/537.36"),
+                       "HelmLocalAI/1.7.0 Chrome/126 Safari/537.36"),
         "Accept-Language": "en-US,en;q=0.8",
     }
     url = "https://html.duckduckgo.com/html/?" + urllib.parse.urlencode({"q": args.query})
@@ -587,6 +659,12 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--query", required=True)
     p.add_argument("--max-results", type=int, default=8)
     p.set_defaults(func=web_search)
+
+    p = sub.add_parser("github-search")
+    p.add_argument("--query", required=True)
+    p.add_argument("--max-results", type=int, default=15)
+    p.add_argument("--sort", default="best-match")
+    p.set_defaults(func=github_search)
 
     p = sub.add_parser("web-fetch")
     p.add_argument("--url", required=True)

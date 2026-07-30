@@ -227,6 +227,33 @@ void register_external_tools(Registry& r, const Config& cfg) {
     const Config* c = &cfg;
 
     r.add({
+        "github_search",
+        "Search GitHub repositories and get verified details back: real URL, star count, license, "
+        "last-push date, primary language, archived flag, open issue count, and topics. ALWAYS prefer "
+        "this over search_web for finding code repositories. The URL and every field come straight "
+        "from the GitHub API - never construct or guess a repository URL yourself, and do not fetch "
+        "the page unless you need README detail beyond the description.",
+        {{"query", ParamType::String, "GitHub search query, e.g. 'unreal engine 5 ability system language:C++'"},
+         {"max_results", ParamType::Integer, "How many repositories to return, 1 to 50"},
+         {"sort", ParamType::String, "One of: stars, updated, forks, best-match"}},
+        ToolClass::Sync,
+        [c](const nlohmann::json& a) -> std::string {
+            if (!c->enable_web_tools) return std::string("error: web tools are disabled in Settings");
+            const std::string python = c->resolved_tool_python();
+            if (!fs::exists(utf8_to_wide(python)))
+                return std::string("error: Python tool runtime not found. Run install_helm_tools.cmd.");
+            const int n = std::clamp(a.value("max_results", 15), 1, 50);
+            std::vector<std::wstring> args{helper_script(), L"github-search",
+                L"--query", utf8_to_wide(a.at("query").get<std::string>()),
+                L"--max-results", std::to_wstring(n),
+                L"--sort", utf8_to_wide(a.value("sort", std::string("best-match")))};
+            auto res = run_process_capture(utf8_to_wide(python), args, L"", 60, nullptr);
+            return require_success(res, "github search");
+        },
+        {}
+    });
+
+    r.add({
         "search_web",
         "Search the current public web, automatically fetch the top result pages (including a JavaScript browser fallback), and return their readable text. Use it for recent or external information. Do not stop at links or ask permission to continue researching.",
         {{"query", ParamType::String, "Specific search query"},
