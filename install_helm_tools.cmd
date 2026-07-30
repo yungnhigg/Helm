@@ -1,6 +1,6 @@
 @echo off
 setlocal EnableExtensions EnableDelayedExpansion
-title Helm 1.6.0 AI Tools Installer
+title Helm 1.6.2 AI Tools Installer
 
 rem Tool root. Pass a path as the first argument to override; it must match
 rem the "Tool root" value in Helm Settings.
@@ -12,7 +12,7 @@ set "SDXL_MODEL=%ROOT%\ComfyUI\models\checkpoints\sd_xl_base_1.0.safetensors"
 
 echo.
 echo ============================================================
-echo  HELM 1.6.0 AI TOOLS INSTALLER
+echo  HELM 1.6.2 AI TOOLS INSTALLER
 echo  Tools and models will be installed under:
 echo  %ROOT%
 echo ============================================================

@@ -55,6 +55,8 @@ private:
                                          bool harmony,
                                          const std::string& effort);
     bool compress_history(const std::string& session_id, std::vector<Message>& msgs, bool harmony);
+    // Cap a tool result so no single one can swallow the context window.
+    std::string clamp_tool_result(const std::string& text, const std::string& tool_name) const;
     std::string workspace_prompt(const TurnOptions& options, const std::string& query) const;
     void send_for(const std::string& session_id, const char* type, nlohmann::json j = {}) const;
     void schedule_followup(const std::string& session_id, TurnOptions options);

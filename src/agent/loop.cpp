@@ -272,6 +272,38 @@ bool AgentLoop::compress_history(const std::string& session_id, std::vector<Mess
     return true;
 }
 
+// A tool result is the one thing in a prompt whose size the model chooses, and
+// it consistently chooses badly: asking fetch_web_page for 50000 characters puts
+// ~12500 tokens of one page into the window. Even at a large context, one search
+// returning three pages will fill it, and then compression starts folding away
+// the findings the run just produced.
+//
+// So the ceiling comes from the context size, not from the tool argument. A
+// third of the window per result leaves room for the fixed prompt, the rest of
+// the history, and the reply. The model is told it was truncated so it can fetch
+// a narrower slice rather than assume the page was short.
+std::string AgentLoop::clamp_tool_result(const std::string& text, const std::string& tool_name) const {
+    const int usable = std::max(512, eng_.n_ctx() - cfg_.ctx_reserve_tokens);
+    // ~3.6 chars per token is a conservative estimate for English prose and
+    // deliberately pessimistic: overshooting here costs a failed turn.
+    const size_t ceiling = static_cast<size_t>(usable) / 3 * 36 / 10;
+    if (text.size() <= ceiling) return text;
+
+    // Cut on a line boundary when one is close, so a truncated page does not end
+    // mid-word or mid-JSON-token.
+    size_t cut = ceiling;
+    const size_t nl = text.rfind('\n', ceiling);
+    if (nl != std::string::npos && nl > ceiling - ceiling / 8) cut = nl;
+
+    log("clamped " + tool_name + " result from " + std::to_string(text.size()) +
+        " to " + std::to_string(cut) + " chars (n_ctx " + std::to_string(eng_.n_ctx()) + ")");
+    return text.substr(0, cut) +
+           "\n\n[truncated: this result was " + std::to_string(text.size()) +
+           " characters, which does not fit the " + std::to_string(eng_.n_ctx()) +
+           "-token context. Only the first " + std::to_string(cut) + " characters are shown. "
+           "Request a smaller max_chars, or fetch a more specific page or section.]";
+}
+
 std::vector<Message> AgentLoop::trimmed_history(const std::string& session_id,
                                                 const std::string& tool_docs,
                                                 const std::string& extra_system,
@@ -444,6 +476,7 @@ void AgentLoop::run_turn(const std::string& session_id, const TurnOptions& optio
             try { result = tool->run_sync(args); }
             catch (const std::exception& e) { result = std::string("error: ") + e.what(); }
             catch (...) { result = "error: unknown tool failure"; }
+            result = clamp_tool_result(result, name);
             store_.append(session_id, {Role::Tool, result, name});
             send_for(session_id, "tool_result", {{"name", name}, {"result", result}});
             continue;
@@ -456,7 +489,8 @@ void AgentLoop::run_turn(const std::string& session_id, const TurnOptions& optio
             [this, session_id, options](int jid, const std::string& jname, JobStatus status, const std::string& result) {
                 const char* s = status == JobStatus::Done ? "done" : status == JobStatus::Cancelled ? "cancelled" : "failed";
                 send_for(session_id, "job_update", {{"id", jid}, {"name", jname}, {"progress", 100}, {"note", result}, {"status", s}});
-                store_.append(session_id, {Role::Tool, "job " + std::to_string(jid) + " " + s + ": " + result, jname});
+                store_.append(session_id, {Role::Tool,
+                    clamp_tool_result("job " + std::to_string(jid) + " " + s + ": " + result, jname), jname});
                 schedule_followup(session_id, options);
             });
         const std::string started = "job " + std::to_string(id) + " started";

@@ -277,11 +277,13 @@ void register_external_tools(Registry& r, const Config& cfg) {
         "fetch_web_page",
         "Fetch and extract one public web page. Falls back to headless Chromium when the static HTML is empty or JavaScript-rendered. Use it immediately when search results are incomplete; do not ask permission first.",
         {{"url", ParamType::String, "Absolute http or https URL"},
-         {"max_chars", ParamType::Integer, "Maximum readable characters from 1000 to 100000"}},
+         {"max_chars", ParamType::Integer, "Readable characters to return, 1000 to 20000. Prefer 8000 or less; large values overflow the context window and the result gets truncated anyway."}},
         ToolClass::Job, {},
         [c](const nlohmann::json& a, JobHandle& job) {
             if (!c->enable_web_tools) return std::string("error: web tools are disabled in Settings");
-            const int limit = std::clamp(a.at("max_chars").get<int>(), 1000, 100000);
+            // 100000 was reachable and guaranteed an overflow. The loop clamps by
+            // context as well, but a sane ceiling here keeps the fetch itself cheap.
+            const int limit = std::clamp(a.at("max_chars").get<int>(), 1000, 20000);
             auto result = run_helper(*c, {L"web-fetch", L"--url", utf8_to_wide(a.at("url").get<std::string>()),
                                           L"--max-chars", std::to_wstring(limit)}, 75, &job);
             return require_success(result, "web page fetch");
