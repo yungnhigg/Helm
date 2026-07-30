@@ -179,7 +179,7 @@ void Bridge::send_settings() {
               {"tool_root", cfg_.tool_root},
               {"comfyui_url", cfg_.comfyui_url}, {"comfyui_workflow", cfg_.comfyui_workflow},
               {"archive_db", cfg_.archive_db}, {"archive_shards", cfg_.archive_shards},
-              {"write_root", cfg_.write_root},
+              {"write_root", cfg_.write_root}, {"image_output_dir", cfg_.image_output_dir},
               {"enable_web_tools", cfg_.enable_web_tools}, {"enable_image_tools", cfg_.enable_image_tools},
               {"enable_voice_tools", cfg_.enable_voice_tools}, {"enable_document_tools", cfg_.enable_document_tools},
               {"enable_desktop_tools", cfg_.enable_desktop_tools}, {"enable_compression", cfg_.enable_compression},
@@ -348,6 +348,7 @@ void Bridge::on_web_message(const std::wstring& raw) {
             return;
         }
         cfg_.write_root = v.value("write_root", cfg_.write_root);
+        cfg_.image_output_dir = v.value("image_output_dir", cfg_.image_output_dir);
         cfg_.archive_db = v.value("archive_db", cfg_.archive_db);
         cfg_.archive_shards = v.value("archive_shards", cfg_.archive_shards);
         cfg_.comfyui_url = v.value("comfyui_url", cfg_.comfyui_url);

@@ -37,6 +37,7 @@ static void load_runtime_fields(const json& j, Config& c) {
     c.piper_voice = j.value("piper_voice", c.piper_voice);
     c.max_autonomous_iterations = std::clamp(j.value("max_autonomous_iterations", c.max_autonomous_iterations), 4, 400);
     c.write_root = j.value("write_root", c.write_root);
+    c.image_output_dir = j.value("image_output_dir", c.image_output_dir);
     c.archive_db = j.value("archive_db", c.archive_db);
     c.archive_shards = j.value("archive_shards", c.archive_shards);
     c.comfyui_url = j.value("comfyui_url", c.comfyui_url);
@@ -194,7 +195,7 @@ void Config::persist_runtime_settings() const {
         {"whisper_exe", whisper_exe}, {"whisper_model", whisper_model},
         {"piper_exe", piper_exe}, {"piper_voice", piper_voice},
         {"max_autonomous_iterations", max_autonomous_iterations},
-        {"write_root", write_root},
+        {"write_root", write_root}, {"image_output_dir", image_output_dir},
         {"archive_db", archive_db}, {"archive_shards", archive_shards},
         {"comfyui_url", comfyui_url}, {"comfyui_workflow", comfyui_workflow},
         {"enable_web_tools", enable_web_tools}, {"enable_image_tools", enable_image_tools},
@@ -229,6 +230,10 @@ std::string Config::resolved_whisper() const { return fallback_path(whisper_exe,
 std::string Config::resolved_whisper_model() const { return fallback_path(whisper_model, tool_root + "\\Models\\ggml-base.en.bin"); }
 std::string Config::resolved_piper() const { return fallback_path(piper_exe, tool_root + "\\HelmToolRuntime\\Scripts\\piper.exe"); }
 std::string Config::resolved_piper_voice() const { return fallback_path(piper_voice, tool_root + "\\Voices\\en_US-lessac-medium.onnx"); }
+std::string Config::resolved_image_output_dir() const {
+    return fallback_path(image_output_dir, app_data_dir() + "generated");
+}
+
 std::string Config::resolved_comfyui_workflow() const {
     // The installer drops a starter SDXL workflow here, so image generation
     // works out of the box instead of requiring a hand-exported API workflow.

@@ -1166,6 +1166,7 @@ function populateSettings() {
   $('setting-compression').checked = v.enable_compression !== false;
   $('setting-archive-tools').checked = v.enable_archive_tools !== false;
   setValue('setting-write-root', v.write_root || '');
+  setValue('setting-image-output-dir', v.image_output_dir || '');
   setValue('setting-archive-db', v.archive_db || '');
   setValue('setting-archive-shards', v.archive_shards || '');
   renderDetection();
@@ -1331,6 +1332,7 @@ function saveSettings() {
       enable_compression: $('setting-compression').checked,
       enable_archive_tools: $('setting-archive-tools').checked,
       write_root: $('setting-write-root').value.trim(),
+      image_output_dir: $('setting-image-output-dir').value.trim(),
       archive_db: $('setting-archive-db').value.trim(),
       archive_shards: $('setting-archive-shards').value.trim()
     }

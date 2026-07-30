@@ -349,7 +349,7 @@ void register_external_tools(Registry& r, const Config& cfg) {
         ToolClass::Job, {},
         [c](const nlohmann::json& a, JobHandle& job) {
             if (!c->enable_image_tools) return std::string("error: image tools are disabled in Settings");
-            const fs::path output = utf8_to_wide(app_data_dir() + "generated");
+            const fs::path output = utf8_to_wide(c->resolved_image_output_dir());
             fs::create_directories(output);
             auto result = run_helper(*c, {L"comfy-generate", L"--url", utf8_to_wide(c->comfyui_url),
                 L"--workflow", utf8_to_wide(c->resolved_comfyui_workflow()),

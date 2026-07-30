@@ -6,6 +6,7 @@
 #include <algorithm>
 #include <sstream>
 #include <exception>
+#include <cctype>
 
 using nlohmann::json;
 
@@ -55,6 +56,39 @@ void AgentLoop::send_for(const std::string& session_id, const char* type, json j
     ev_.send(type, std::move(j));
 }
 
+
+namespace {
+// A "reply" that only announces intent to act, then stops - "Let me generate
+// the textures first:" with nothing after it - is not an answer, it is a
+// stall. The model narrated a plan instead of making the tool call, exactly
+// what the tool-use policy in the prompt already forbids; telling it not to
+// do this in the prompt does not reliably stop it, so this is caught
+// structurally instead. Deliberately narrow: only content that both opens
+// with a forward-looking lead-in AND ends without terminal punctuation (a
+// trailing colon, dash, or ellipsis, or simply cuts off) counts, so a normal
+// answer that happens to start "Let me explain..." and then actually
+// explains is left alone.
+bool looks_like_stall(const std::string& content) {
+    std::string t = content;
+    while (!t.empty() && std::isspace(static_cast<unsigned char>(t.back()))) t.pop_back();
+    if (t.empty()) return true; // empty reply is never a real answer
+    size_t start = 0;
+    while (start < t.size() && std::isspace(static_cast<unsigned char>(t[start]))) ++start;
+    std::string head = t.substr(start, 40);
+    for (auto& c : head) c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+    static const char* lead_ins[] = {
+        "let me", "i'll", "i will", "i'm going to", "first, i", "first i",
+        "next, i", "now i'll", "now let me", "starting with", "to start,"
+    };
+    bool has_lead_in = false;
+    for (const char* l : lead_ins) if (head.rfind(l, 0) == 0) { has_lead_in = true; break; }
+    if (!has_lead_in) return false;
+    const char last = t.back();
+    const bool ends_open = (last == ':' || last == '-' ||
+        (t.size() >= 3 && t.substr(t.size() - 3) == "..."));
+    return ends_open;
+}
+} // namespace
 
 void AgentLoop::start_next_batch(TurnOptions options) {
     if (stop_requested_.load()) { log("perpetual run stopped by user"); return; }
@@ -425,6 +459,13 @@ void AgentLoop::run_turn(const std::string& session_id, const TurnOptions& optio
     // or context compaction failing - not by an arbitrary count. A perpetual run
     // must not clear its cross-batch dedup, or a fresh batch resurveys the last.
     if (!options.perpetual) run_call_signatures_.clear();
+    // Total token-limit truncations auto-retried in this run (not required to
+    // be back-to-back). Auto-retry is meant for the ordinary "content was too
+    // big for this call" case; a model that keeps overflowing no matter what
+    // it is told is a different, real problem and should surface as an error
+    // rather than loop forever.
+    int consecutive_truncations = 0;
+    int consecutive_stalls = 0;
     for (int iter = 0; ; ++iter) {
         const auto current = store_.messages(session_id);
         std::string query;
@@ -475,6 +516,42 @@ void AgentLoop::run_turn(const std::string& session_id, const TurnOptions& optio
         }
         if (!parsed) {
             log("unparseable model output: " + r.text);
+
+            // A tool call - almost always a large write_text_file - cut off
+            // mid-string by the generation token budget looks identical to any
+            // other parse failure, but it is not a real failure: the model was
+            // still correctly mid-write when the budget ran out. Silently
+            // showing the truncated JSON as the "answer" (the old behaviour)
+            // told the user nothing was wrong while nothing was actually
+            // written. Detect this specific case and auto-continue instead of
+            // giving up, whether the run is autonomous or an ordinary chat
+            // turn - the user should never have to notice this happened, let
+            // alone type "try again" themselves.
+            const bool truncated_call = (r.reason == StopReason::MaxTokens) &&
+                (r.text.find("\"type\"") != std::string::npos) &&
+                (r.text.find("tool_call") != std::string::npos);
+            if (truncated_call && consecutive_truncations < 3) {
+                ++consecutive_truncations;
+                store_.append(session_id, {Role::Tool,
+                    "Your previous response was cut off by the generation token limit before the "
+                    "tool call finished, so nothing was written or run. This usually means the "
+                    "content was too large for one call. If you were writing a file, split it: call "
+                    "write_text_file again with a SHORT first part (overwrite=true, append=false), "
+                    "then continue writing the rest across multiple calls with append=true. Do not "
+                    "attempt the full content in a single call again. Continue now.",
+                    "run_controller"});
+                send_for(session_id, "note", {{"text", "Tool call was cut off (token limit) - retrying automatically."}});
+                continue;
+            }
+            if (truncated_call) {
+                const std::string msg = "Generation keeps getting cut off before completing a tool call, "
+                    "even after being told to split the content. Raise the generation token limit "
+                    "(effort: high), or ask for a smaller amount of content per request.";
+                store_.append(session_id, {Role::Assistant, msg, ""});
+                send_for(session_id, "assistant_final", {{"text", msg}});
+                return;
+            }
+
             // Raw Harmony markup in the transcript helps nobody, so a GPT-OSS
             // failure gets a diagnosis instead of the unusable text.
             const std::string fallback = harmony
@@ -492,20 +569,36 @@ void AgentLoop::run_turn(const std::string& session_id, const TurnOptions& optio
             const std::string content = output.value("content", "");
             // Only the answer is persisted. Reasoning is display-only: feeding it
             // back would compound across turns and crowd out real history.
-            store_.append(session_id, {Role::Assistant, content, ""});
-            send_for(session_id, "assistant_final", {{"text", content}, {"thinking", thinking}});
-
-            // Interactive turn: the reply is the answer and the turn is over.
-            if (!options.autonomous) return;
-
-            // Autonomous run: the reply was progress. Record a continuation
-            // marker on the tool rail and keep going. This is enforced here
-            // rather than requested in the prompt, because the previous
-            // behaviour returned regardless of what the prompt said.
             if (stop_requested_.load()) {
+                store_.append(session_id, {Role::Assistant, content, ""});
+                send_for(session_id, "assistant_final", {{"text", content}, {"thinking", thinking}});
                 send_for(session_id, "note", {{"text", "Stopped."}});
                 return;
             }
+
+            // A stalling reply gets forced back into the loop in EVERY mode,
+            // chat included - it is not shown as the answer, because it is
+            // not one. Capped so a model that truly cannot progress fails
+            // loudly instead of spinning silently forever.
+            if (looks_like_stall(content) && consecutive_stalls < 8) {
+                ++consecutive_stalls;
+                log("stalling reply detected, forcing continuation: " + content.substr(0, 80));
+                store_.append(session_id, {Role::Tool,
+                    "That was a plan, not an action. Do not describe what you are about to do - "
+                    "make the tool call itself in this response, right now.",
+                    "run_controller"});
+                send_for(session_id, "note", {{"text", "Model stalled on a plan instead of acting - continuing automatically."}});
+                continue;
+            }
+
+            store_.append(session_id, {Role::Assistant, content, ""});
+            send_for(session_id, "assistant_final", {{"text", content}, {"thinking", thinking}});
+
+            // Interactive turn: a genuine answer ends the turn here.
+            if (!options.autonomous) return;
+
+            // Autonomous run: a genuine reply was still just progress, not
+            // task_complete. Keep going.
             store_.append(session_id, {Role::Tool,
                 "Progress noted. The task is not finished until you call task_complete. "
                 "Continue with the next concrete step now by issuing a tool_call.",

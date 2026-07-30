@@ -101,10 +101,15 @@ void register_tool_files(Registry& r, const Config& cfg) {
 
     r.add({
         "write_text_file",
-        "Write UTF-8 text to a local file. Parent directories are created. Use overwrite=false unless replacement is intended.",
+        "Write UTF-8 text to a local file. Parent directories are created. A file large enough to "
+        "risk exceeding your generation token budget in one call MUST be split: write the first part "
+        "with overwrite=true, append=false, then write each following part with append=true. Never "
+        "try to emit an entire large file's content in a single call - it will be cut off mid-string "
+        "and nothing will be saved. Use overwrite=false (and append=false) unless replacement is intended.",
         {{"path", ParamType::String, "Destination path"},
-         {"content", ParamType::String, "UTF-8 file contents"},
-         {"overwrite", ParamType::Boolean, "Whether an existing file may be replaced"}},
+         {"content", ParamType::String, "UTF-8 text for this part of the file"},
+         {"overwrite", ParamType::Boolean, "Whether an existing file may be replaced. Ignored when append is true."},
+         {"append", ParamType::Boolean, "True to add this content to the end of an existing file instead of replacing it. Use for part 2 onward of a large file."}},
         ToolClass::Sync,
         [c](const nlohmann::json& a) {
             const fs::path p = utf8_to_wide(a.at("path").get<std::string>());
@@ -113,11 +118,22 @@ void register_tool_files(Registry& r, const Config& cfg) {
                 log("blocked write outside write_root: " + wide_to_utf8(p.wstring()));
                 return err;
             }
+            const bool append = a.value("append", false);
             const bool overwrite = a.at("overwrite").get<bool>();
             std::error_code ec;
-            if (fs::exists(p, ec) && !overwrite) return std::string("error: file already exists");
             fs::create_directories(p.parent_path(), ec);
-            if (!atomic_write_text(p, a.at("content").get<std::string>())) return std::string("error: write failed");
+            const std::string content = a.at("content").get<std::string>();
+            if (append) {
+                // Plain ofstream append - atomic_write_text's write-then-rename
+                // pattern would clobber prior parts instead of extending them.
+                std::ofstream f(p, std::ios::binary | std::ios::app);
+                if (!f) return std::string("error: could not open file to append");
+                f.write(content.data(), static_cast<std::streamsize>(content.size()));
+                if (!f) return std::string("error: append failed");
+                return std::string("appended ") + std::to_string(content.size()) + " bytes to " + wide_to_utf8(p.wstring());
+            }
+            if (fs::exists(p, ec) && !overwrite) return std::string("error: file already exists");
+            if (!atomic_write_text(p, content)) return std::string("error: write failed");
             return std::string("wrote ") + wide_to_utf8(p.wstring());
         },
         {}

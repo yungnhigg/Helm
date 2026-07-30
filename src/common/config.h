@@ -73,6 +73,11 @@ struct Config {
     bool allow_process_tools = false;
     std::vector<std::string> process_allowlist;
     std::string write_root;
+    // Where generate_image saves output. Empty means the default under
+    // %LOCALAPPDATA%\Helm\generated. A resolver applies the fallback so
+    // callers never need to know the default path themselves.
+    std::string image_output_dir;
+    std::string resolved_image_output_dir() const;
 
     // External open-source tool stack installed by install_helm_tools.cmd.
     std::string tool_root = "F:\\AI Tools";
