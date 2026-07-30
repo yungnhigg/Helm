@@ -98,8 +98,14 @@ std::string PromptBuilder::render_harmony(const Message& m, bool preserve_trace)
     // Compression writes its summary on the tool rail, but no function by that
     // name exists. Rendering it as a function return would advertise a tool the
     // model cannot call, so it goes in as user-supplied context instead.
+    // Internal rails - compression summaries and autonomous-run continuation
+    // markers - ride the tool role but correspond to no registered function.
+    // Rendering them as function returns would advertise tools the model cannot
+    // call, so they enter as user-supplied context instead.
     if (m.tool_name == "conversation_summary")
         return "<|start|>user<|message|>[summary of earlier conversation] " + content + "<|end|>";
+    if (m.tool_name == "run_controller")
+        return "<|start|>user<|message|>[run controller] " + content + "<|end|>";
     return "<|start|>functions." + m.tool_name +
            " to=assistant<|channel|>commentary<|message|>" + content + "<|end|>";
 }

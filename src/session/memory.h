@@ -16,6 +16,7 @@
 // writes are refused rather than silently truncated — losing a memory without
 // saying so is worse than refusing to add one.
 #include <string>
+#include <mutex>
 #include <vector>
 
 namespace lar {
@@ -53,7 +54,16 @@ public:
 private:
     bool load();
     bool save(const std::string& text);
+    // Assumes m_ is held. The read-modify-write paths need the lock across the
+    // whole operation and std::mutex is not recursive.
+    bool save_locked(const std::string& text);
 
+
+    // cache_ is read by the inference thread while it builds a prompt and
+    // written by the tool thread when remember/forget fires, plus read and
+    // written by the UI thread from the memory editor. Concurrent access to a
+    // std::string is undefined behaviour, and this had no lock at all.
+    mutable std::mutex m_;
     std::string path_;
     std::string cache_;
     size_t budget_;

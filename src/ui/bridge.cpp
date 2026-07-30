@@ -329,6 +329,14 @@ void Bridge::on_web_message(const std::wstring& raw) {
         cfg_.kv_cache_type = v.value("kv_cache_type", cfg_.kv_cache_type);
         if (cfg_.kv_cache_type != "f16" && cfg_.kv_cache_type != "q8_0" && cfg_.kv_cache_type != "q4_0") cfg_.kv_cache_type = "f16";
         cfg_.tool_root = v.value("tool_root", cfg_.tool_root);
+        // Config is read from the inference and tool threads without a lock.
+        // Rewriting strings like write_root or archive_db underneath a running
+        // turn is a data race, so settings only apply between turns.
+        if (loop_.busy()) {
+            emit({{"type", "error"},
+                  {"message", "Settings cannot change while a turn is running. Wait for it to finish, or stop it, then save again."}});
+            return;
+        }
         cfg_.write_root = v.value("write_root", cfg_.write_root);
         cfg_.archive_db = v.value("archive_db", cfg_.archive_db);
         cfg_.archive_shards = v.value("archive_shards", cfg_.archive_shards);

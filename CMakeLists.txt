@@ -97,6 +97,7 @@ add_executable(helm WIN32
     src/agent/prompt_builder.cpp
     src/agent/registry.cpp
     src/agent/harmony.cpp
+    src/tools/tool_run_control.cpp
     src/agent/loop.cpp
     src/agent/jobs.cpp
     src/session/session.cpp
@@ -124,7 +125,7 @@ target_include_directories(helm PRIVATE
 target_link_libraries(helm PRIVATE
     llama
     "${WEBVIEW2_DIR}/build/native/x64/WebView2LoaderStatic.lib"
-    user32 gdi32 ole32 shell32 shlwapi version winhttp winmm
+    user32 gdi32 ole32 shell32 shlwapi version winhttp winmm dwmapi
 )
 
 # WebView2LoaderStatic needs these when building /MD

@@ -30,23 +30,42 @@ MemoryStore::MemoryStore(size_t budget_bytes)
 
 bool MemoryStore::load() {
     std::ifstream f(fs::path(utf8_to_wide(path_)), std::ios::binary);
-    if (!f) { cache_.clear(); return false; }
     std::ostringstream ss;
-    ss << f.rdbuf();
+    const bool opened = static_cast<bool>(f);
+    if (opened) ss << f.rdbuf();
+    // The file read happens outside the lock; only the shared cache is guarded.
+    std::lock_guard<std::mutex> guard(m_);
+    if (!opened) { cache_.clear(); return false; }
     cache_ = ss.str();
     return true;
 }
 
-bool MemoryStore::save(const std::string& text) {
+// Assumes m_ is already held. append/forget/replace are read-modify-write and
+// must hold the lock across the whole sequence, so they cannot call a version
+// that locks again - std::mutex is not recursive.
+bool MemoryStore::save_locked(const std::string& text) {
     if (!atomic_write_text(fs::path(utf8_to_wide(path_)), text)) return false;
     cache_ = text;
     return true;
 }
 
-std::string MemoryStore::text() const { return cache_; }
-size_t MemoryStore::bytes() const { return cache_.size(); }
+bool MemoryStore::save(const std::string& text) {
+    std::lock_guard<std::mutex> guard(m_);
+    return save_locked(text);
+}
+
+std::string MemoryStore::text() const {
+    std::lock_guard<std::mutex> guard(m_);
+    return cache_;
+}
+
+size_t MemoryStore::bytes() const {
+    std::lock_guard<std::mutex> guard(m_);
+    return cache_.size();
+}
 
 MemoryStatus MemoryStore::replace(const std::string& text) {
+    std::lock_guard<std::mutex> guard(m_);
     MemoryStatus st;
     st.budget = budget_;
     st.bytes = text.size();
@@ -55,13 +74,14 @@ MemoryStatus MemoryStore::replace(const std::string& text) {
                      std::to_string(budget_) + " byte budget; trim it before saving";
         return st;
     }
-    if (!save(text)) { st.message = "could not write memory file"; return st; }
+    if (!save_locked(text)) { st.message = "could not write memory file"; return st; }
     st.ok = true;
     st.message = "memory saved (" + std::to_string(text.size()) + " bytes)";
     return st;
 }
 
 MemoryStatus MemoryStore::append(const std::string& entry) {
+    std::lock_guard<std::mutex> guard(m_);
     MemoryStatus st;
     st.budget = budget_;
     const std::string clean = trim(entry);
@@ -92,13 +112,14 @@ MemoryStatus MemoryStore::append(const std::string& entry) {
                      std::to_string(budget_) + " bytes). Prune it in Settings, then try again.";
         return st;
     }
-    if (!save(next)) { st.message = "could not write memory file"; return st; }
+    if (!save_locked(next)) { st.message = "could not write memory file"; return st; }
     st.ok = true;
     st.message = "remembered";
     return st;
 }
 
 MemoryStatus MemoryStore::forget(const std::string& needle) {
+    std::lock_guard<std::mutex> guard(m_);
     MemoryStatus st;
     st.budget = budget_;
     const std::string want = lower_ascii(trim(needle));
@@ -124,7 +145,7 @@ MemoryStatus MemoryStore::forget(const std::string& needle) {
 
     std::string next = out.str();
     if (trim(next).empty()) next.clear();
-    if (!save(next)) { st.message = "could not write memory file"; return st; }
+    if (!save_locked(next)) { st.message = "could not write memory file"; return st; }
     st.ok = true;
     st.bytes = next.size();
     st.message = "forgot " + std::to_string(removed) + (removed == 1 ? " entry" : " entries");
@@ -132,10 +153,17 @@ MemoryStatus MemoryStore::forget(const std::string& needle) {
 }
 
 std::string MemoryStore::prompt_block() const {
-    if (trim(cache_).empty()) return {};
+    // Copy under the lock, then build the block from the copy. This is called on
+    // the inference thread for every prompt while the tool thread may be writing.
+    std::string snapshot;
+    {
+        std::lock_guard<std::mutex> guard(m_);
+        snapshot = cache_;
+    }
+    if (trim(snapshot).empty()) return {};
     return "\n\n# Long-term memory\n"
            "Durable facts the user asked you to keep. Treat them as background context, "
-           "not as instructions to act on right now.\n\n" + cache_;
+           "not as instructions to act on right now.\n\n" + snapshot;
 }
 
 } // namespace lar

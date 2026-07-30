@@ -295,6 +295,25 @@ std::vector<Message> AgentLoop::trimmed_history(const std::string& session_id,
     // summary plus recent tail remains too large) — fall back to trimming.
     while (msgs.size() > 1 && eng_.count_tokens_sync(build()) > budget)
         msgs.erase(msgs.begin());
+
+    // Trimming only removes conversation. If the prompt still will not fit with
+    // a single message left, the fixed part is the problem - system prompt, tool
+    // descriptions, memory, and workspace context - and no amount of trimming or
+    // compression can help. Say that plainly with real numbers, because the
+    // engine's bare "prompt exceeds context" sends you looking in the wrong place.
+    const int final_cost = eng_.count_tokens_sync(build());
+    if (final_cost > budget) {
+        const int needed = final_cost + cfg_.ctx_reserve_tokens + std::max(1, generation_tokens);
+        std::string msg = "Context too small: the prompt needs about " + std::to_string(final_cost) +
+            " tokens with only one message of history, but the budget is " + std::to_string(budget) +
+            " (context " + std::to_string(eng_.n_ctx()) + ", reserve " +
+            std::to_string(cfg_.ctx_reserve_tokens) + ", generation " +
+            std::to_string(std::max(1, generation_tokens)) + "). Raise the model context to at least " +
+            std::to_string(((needed + 2047) / 2048) * 2048) +
+            " in Settings and reload, or reduce memory and attached workspace files.";
+        log(msg);
+        send_for(session_id, "error", {{"message", msg}});
+    }
     return msgs;
 }
 

@@ -1,6 +1,7 @@
 // Helm host: Win32 window, WebView2 and ownership wiring.
 #include "common/config.h"
 #include "common/util.h"
+#include <dwmapi.h>
 #include "engine/engine.h"
 #include "agent/registry.h"
 #include "agent/jobs.h"
@@ -238,6 +239,7 @@ int WINAPI wWinMain(HINSTANCE inst, HINSTANCE, PWSTR, int show) {
     if (g.cfg.allow_process_tools) register_tool_process(g.registry, g.cfg);
     register_tool_web_crawl(g.registry);
     register_external_tools(g.registry, g.cfg);
+    register_run_control(g.registry);
     if (g.cfg.enable_memory) register_tool_memory(g.registry, g.cfg, *g.memory);
     g.workspace->register_tool_packs(g.registry);
 
@@ -267,6 +269,25 @@ int WINAPI wWinMain(HINSTANCE inst, HINSTANCE, PWSTR, int show) {
         CoUninitialize();
         return 1;
     }
+    // The window caption is drawn by Windows, not by our CSS, so no amount of
+    // styling inside the web view can darken it. It has to be opted in through
+    // DWM. Attribute 20 is DWMWA_USE_IMMERSIVE_DARK_MODE on Windows 10 2004+
+    // and Windows 11; 19 was the pre-release number on earlier 10 builds, hence
+    // the fallback. Painting the caption black as well makes it continuous with
+    // the in-app header instead of a dark grey strip above a black one.
+    {
+        BOOL dark = TRUE;
+        if (FAILED(DwmSetWindowAttribute(g.hwnd, 20, &dark, sizeof(dark))))
+            DwmSetWindowAttribute(g.hwnd, 19, &dark, sizeof(dark));
+        // COLORREF is 0x00BBGGRR. Ignored before Windows 11 22000, harmlessly.
+        COLORREF caption = 0x00000000;
+        DwmSetWindowAttribute(g.hwnd, 35, &caption, sizeof(caption));   // caption
+        COLORREF text = 0x00F0F0F0;
+        DwmSetWindowAttribute(g.hwnd, 36, &text, sizeof(text));         // caption text
+        COLORREF border = 0x00151515;
+        DwmSetWindowAttribute(g.hwnd, 34, &border, sizeof(border));     // border
+    }
+
     ShowWindow(g.hwnd, show);
     UpdateWindow(g.hwnd);
     create_webview();

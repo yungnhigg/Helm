@@ -26,5 +26,8 @@ ProcessCaptureResult run_process_capture(const std::wstring& executable,
 std::string transcribe_audio_file(const Config& cfg, const std::string& input_path, JobHandle* job = nullptr);
 std::string extract_document_text(const Config& cfg, const std::string& path, size_t max_chars = 200000);
 void register_external_tools(Registry& registry, const Config& cfg);
+// Always registered: task_complete must exist in the registry or the grammar
+// forbids it and an autonomous run has no reachable exit.
+void register_run_control(Registry& registry);
 
 } // namespace lar
