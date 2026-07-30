@@ -491,6 +491,39 @@ void Bridge::on_web_message(const std::wstring& raw) {
         if (loop_.has_in_flight_work()) { emit({{"type", "error"}, {"message", "finish or cancel active turns and jobs before deleting agents"}}); return; }
         workspace_.remove_agent(j.value("id", "")); send_workspace(); return;
     }
+    // Opening an agent only created a session; something still had to type into
+    // it. An agent that needs prompting every time is not autonomous, so this
+    // opens the session and immediately drives the first turn from the agent's
+    // own configuration.
+    if (type == "run_agent") {
+        const std::string agent_id = j.value("id", "");
+        AgentProfile agent;
+        if (!workspace_.get_agent(agent_id, agent)) {
+            emit({{"type", "error"}, {"message", "agent not found"}});
+            return;
+        }
+        if (!eng_.loaded()) {
+            emit({{"type", "error"}, {"message", "load a model before running an agent"}});
+            return;
+        }
+        const std::string session_id = store_.create();
+        send_sessions(); send_history(session_id);
+        emit({{"type", "agent_opened"}, {"agent_id", agent_id}, {"session_id", session_id}, {"autorun", true}});
+
+        // The configuration itself already reaches the model through the
+        // workspace context block, so the kickoff only has to start the loop and
+        // forbid the usual failure: answering with a plan instead of acting.
+        TurnOptions options;
+        options.mode = "agent";
+        options.effort = j.value("effort", std::string("medium"));
+        options.agent_id = agent_id;
+        const std::string kickoff = j.value("instruction", std::string(
+            "Begin the task defined in your active configuration now. Do not reply with a plan or "
+            "ask what to do first: make your first tool call in this response."));
+        loop_.user_turn(session_id, kickoff, options);
+        return;
+    }
+
     if (type == "open_agent") {
         const std::string agent_id = j.value("id", "");
         AgentProfile agent;

@@ -176,6 +176,7 @@ const handlers = {
       post({ type: 'load_model', id: state.activeAgent.model_id });
     }
     showAgentChat();
+    syncComposerAgent();
   },
 
   turn_accepted(message) {
@@ -370,6 +371,7 @@ function showChatView() {
 
 function showAgentDashboard() {
   state.activeAgent = null;
+  syncComposerAgent();
   $('chat-view').classList.remove('active');
   $('agent-view').classList.add('active');
   $('back-agents').hidden = true;
@@ -477,11 +479,16 @@ function renderAgents() {
     open.className = 'primary';
     open.textContent = 'Open';
     open.onclick = () => post({ type: 'open_agent', id: agent.id });
+    const run = document.createElement('button');
+    run.className = 'primary run-agent';
+    run.textContent = '▶ Run';
+    run.title = 'Open a new session and start the task immediately';
+    run.onclick = () => post({ type: 'run_agent', id: agent.id, effort: $('effort')?.value || 'medium' });
     const remove = document.createElement('button');
     remove.className = 'ghost';
     remove.textContent = 'Delete';
     remove.onclick = () => post({ type: 'delete_agent', id: agent.id });
-    actions.append(open, remove);
+    actions.append(run, open, remove);
     card.append(head, actions);
     grid.append(card);
   }
@@ -772,6 +779,24 @@ function addToolChip(label, text, kind) {
   transcript.append(chip);
   scrollTranscript(false);
   return chip;
+}
+
+// The composer carries the active agent's name so it is never ambiguous which
+// instrument the next message drives.
+function syncComposerAgent() {
+  const wrap = $('composer-wrap');
+  const input = $('input');
+  if (!wrap) return;
+  const agent = state.activeAgent;
+  if (agent) {
+    wrap.classList.add('agent-active');
+    const composer = wrap.querySelector('.composer');
+    if (composer) composer.dataset.agentLabel = `${agent.type || 'agent'} · ${agent.name}`;
+    if (input) input.placeholder = `Direct ${agent.name}`;
+  } else {
+    wrap.classList.remove('agent-active');
+    if (input) input.placeholder = 'Message Helm';
+  }
 }
 
 function clearFinishedJobs() {
@@ -1172,8 +1197,8 @@ function updateMicState(note = '') {
   else $('composer-hint').textContent = 'Enter to send · Shift+Enter for newline';
 }
 
-$('mode-chat').onclick = () => { state.activeAgent = null; setMode('chat'); };
-$('mode-agent').onclick = () => { state.activeAgent = null; setMode('agent'); };
+$('mode-chat').onclick = () => { state.activeAgent = null; syncComposerAgent(); setMode('chat'); };
+$('mode-agent').onclick = () => { state.activeAgent = null; syncComposerAgent(); setMode('agent'); };
 $('back-agents').onclick = () => { state.activeAgent = null; showAgentDashboard(); };
 $('new-chat').onclick = () => {
   state.activeAgent = null;
