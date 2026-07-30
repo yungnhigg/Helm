@@ -1149,6 +1149,12 @@ function populateSettings() {
   setValue('setting-flash', v.flash_attention || 'auto');
   setValue('setting-kv-location', v.kv_cache_location || 'vram');
   setValue('setting-kv-type', v.kv_cache_type || 'f16');
+  setValue('setting-temperature', v.temperature ?? 0.7);
+  setValue('setting-top-p', v.top_p ?? 1.0);
+  setValue('setting-top-k', v.top_k ?? 40);
+  setValue('setting-min-p', v.min_p ?? 0.05);
+  setValue('setting-repeat-penalty', v.repeat_penalty ?? 1.0);
+  setValue('setting-repeat-last-n', v.repeat_last_n ?? 64);
   setValue('setting-tool-root', v.tool_root || 'F:\\AI Tools');
   setValue('setting-comfy-url', v.comfyui_url || 'http://127.0.0.1:8188');
   setValue('setting-comfy-workflow', v.comfyui_workflow || '');
@@ -1203,10 +1209,15 @@ function computePresets() {
   const fastCtx     = roundKto(8192  * vramRatio, 1024);
   const balancedCtx = roundKto(32768 * vramRatio, 2048);
   const hybridCtx   = roundKto(65536 * ramRatio,  4096);
+  // Sampling defaults tuned for coder-class MoE/dense models: mild repeat
+  // penalty (1.05) is cheap insurance against the newline-collapse failure
+  // without hurting normal generation, and matches the values known to work
+  // well for this model class.
+  const sampling = { temperature: 0.6, top_p: 0.95, top_k: 20, min_p: 0.05, repeat_penalty: 1.05, repeat_last_n: 64 };
   return {
-    fast:     { n_ctx: fastCtx,     n_gpu_layers: 999, n_batch: 1024, n_ubatch: 512, n_threads: 0, n_threads_batch: 0, flash: 'on', kv_location: 'vram', kv_type: 'f16' },
-    balanced: { n_ctx: balancedCtx, n_gpu_layers: 999, n_batch: 1024, n_ubatch: 512, n_threads: 0, n_threads_batch: 0, flash: 'on', kv_location: 'vram', kv_type: 'q8_0' },
-    hybrid:   { n_ctx: hybridCtx,   n_gpu_layers: 999, n_batch: 512,  n_ubatch: 256, n_threads: 0, n_threads_batch: 0, flash: 'on', kv_location: 'ram',  kv_type: 'q8_0' },
+    fast:     { n_ctx: fastCtx,     n_gpu_layers: 999, n_batch: 1024, n_ubatch: 512, n_threads: 0, n_threads_batch: 0, flash: 'on', kv_location: 'vram', kv_type: 'f16',  ...sampling },
+    balanced: { n_ctx: balancedCtx, n_gpu_layers: 999, n_batch: 1024, n_ubatch: 512, n_threads: 0, n_threads_batch: 0, flash: 'on', kv_location: 'vram', kv_type: 'q8_0', ...sampling },
+    hybrid:   { n_ctx: hybridCtx,   n_gpu_layers: 999, n_batch: 512,  n_ubatch: 256, n_threads: 0, n_threads_batch: 0, flash: 'on', kv_location: 'ram',  kv_type: 'q8_0', ...sampling },
   };
 }
 
@@ -1274,11 +1285,21 @@ function applyPreset(name) {
   $('setting-flash').value = v.flash;
   $('setting-kv-location').value = v.kv_location;
   $('setting-kv-type').value = v.kv_type;
+  if (v.temperature !== undefined) $('setting-temperature').value = v.temperature;
+  if (v.top_p !== undefined) $('setting-top-p').value = v.top_p;
+  if (v.top_k !== undefined) $('setting-top-k').value = v.top_k;
+  if (v.min_p !== undefined) $('setting-min-p').value = v.min_p;
+  if (v.repeat_penalty !== undefined) $('setting-repeat-penalty').value = v.repeat_penalty;
+  if (v.repeat_last_n !== undefined) $('setting-repeat-last-n').value = v.repeat_last_n;
 }
 
 function saveSettings() {
   const integer = (id, fallback) => {
     const value = Number.parseInt($(id).value, 10);
+    return Number.isFinite(value) ? value : fallback;
+  };
+  const decimal = (id, fallback) => {
+    const value = Number.parseFloat($(id).value);
     return Number.isFinite(value) ? value : fallback;
   };
   post({
@@ -1293,6 +1314,12 @@ function saveSettings() {
       flash_attention: $('setting-flash').value,
       kv_cache_location: $('setting-kv-location').value,
       kv_cache_type: $('setting-kv-type').value,
+      temperature: decimal('setting-temperature', 0.7),
+      top_p: decimal('setting-top-p', 1.0),
+      top_k: integer('setting-top-k', 40),
+      min_p: decimal('setting-min-p', 0.05),
+      repeat_penalty: decimal('setting-repeat-penalty', 1.0),
+      repeat_last_n: integer('setting-repeat-last-n', 64),
       tool_root: $('setting-tool-root').value.trim(),
       comfyui_url: $('setting-comfy-url').value.trim(),
       comfyui_workflow: $('setting-comfy-workflow').value.trim(),

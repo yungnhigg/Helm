@@ -21,6 +21,13 @@ static void load_runtime_fields(const json& j, Config& c) {
     c.kv_cache_location = j.value("kv_cache_location", c.kv_cache_location);
     c.kv_cache_type = j.value("kv_cache_type", c.kv_cache_type);
 
+    c.sampling.temperature = std::clamp(j.value("temperature", c.sampling.temperature), 0.0f, 5.0f);
+    c.sampling.top_k = std::clamp(j.value("top_k", c.sampling.top_k), 0, 1000);
+    c.sampling.top_p = std::clamp(j.value("top_p", c.sampling.top_p), 0.0f, 1.0f);
+    c.sampling.min_p = std::clamp(j.value("min_p", c.sampling.min_p), 0.0f, 1.0f);
+    c.sampling.repeat_penalty = std::clamp(j.value("repeat_penalty", c.sampling.repeat_penalty), 0.5f, 2.0f);
+    c.sampling.repeat_last_n = std::clamp(j.value("repeat_last_n", c.sampling.repeat_last_n), 0, 4096);
+
     c.tool_root = j.value("tool_root", c.tool_root);
     c.tool_python = j.value("tool_python", c.tool_python);
     c.ffmpeg_exe = j.value("ffmpeg_exe", c.ffmpeg_exe);
@@ -181,6 +188,8 @@ void Config::persist_runtime_settings() const {
         {"n_ctx", n_ctx}, {"n_gpu_layers", n_gpu_layers}, {"n_batch", n_batch}, {"n_ubatch", n_ubatch},
         {"n_threads", n_threads}, {"n_threads_batch", n_threads_batch},
         {"flash_attention", flash_attention}, {"kv_cache_location", kv_cache_location}, {"kv_cache_type", kv_cache_type},
+        {"temperature", sampling.temperature}, {"top_k", sampling.top_k}, {"top_p", sampling.top_p},
+        {"min_p", sampling.min_p}, {"repeat_penalty", sampling.repeat_penalty}, {"repeat_last_n", sampling.repeat_last_n},
         {"tool_root", tool_root}, {"tool_python", tool_python}, {"ffmpeg_exe", ffmpeg_exe},
         {"whisper_exe", whisper_exe}, {"whisper_model", whisper_model},
         {"piper_exe", piper_exe}, {"piper_voice", piper_voice},

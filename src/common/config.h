@@ -16,7 +16,14 @@ struct TemplateConfig {
 struct SamplingConfig {
     float temperature = 0.7f;
     int top_k = 40;
+    float top_p = 1.0f;          // 1.0 = disabled (no nucleus cutoff)
     float min_p = 0.05f;
+    // Repetition penalty: discourages resampling recent tokens. 1.0 = off.
+    // This is the control that stops a model looping on one token forever
+    // (e.g. an MoE degenerating into a wall of newlines) - raising it to
+    // ~1.05-1.1 is the standard fix for that failure.
+    float repeat_penalty = 1.0f;
+    int repeat_last_n = 64;      // how many recent tokens the penalty considers
     uint32_t seed = 0xFFFFFFFF;
 };
 

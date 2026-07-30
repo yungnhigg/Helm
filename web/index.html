@@ -186,6 +186,17 @@
         <label><span>KV cache quantization</span><select id="setting-kv-type"><option value="f16">F16</option><option value="q8_0">Q8_0</option><option value="q4_0">Q4_0</option></select></label>
       </div>
 
+      <h3 class="settings-section-title">Sampling</h3>
+      <p class="perm-hint">Controls how the model picks its next token. Repeat penalty is the main fix for a model looping on one token (e.g. spamming newlines) &mdash; raise it toward 1.1 if that happens.</p>
+      <div class="form-grid settings-grid">
+        <label><span>Temperature</span><input id="setting-temperature" type="number" min="0" max="5" step="0.05"></label>
+        <label><span>Top-p</span><input id="setting-top-p" type="number" min="0" max="1" step="0.01"><small>1.0 = disabled</small></label>
+        <label><span>Top-k</span><input id="setting-top-k" type="number" min="0" max="1000" step="1"><small>0 = disabled</small></label>
+        <label><span>Min-p</span><input id="setting-min-p" type="number" min="0" max="1" step="0.01"></label>
+        <label><span>Repeat penalty</span><input id="setting-repeat-penalty" type="number" min="0.5" max="2" step="0.01"><small>1.0 = off</small></label>
+        <label><span>Repeat penalty window</span><input id="setting-repeat-last-n" type="number" min="0" max="4096" step="16"><small>recent tokens considered</small></label>
+      </div>
+
       <h3 class="settings-section-title">Installed models</h3>
       <div id="model-manage-list" class="model-manage-list"></div>
 

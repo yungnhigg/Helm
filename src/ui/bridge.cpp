@@ -172,7 +172,11 @@ void Bridge::send_settings() {
               {"n_batch", cfg_.n_batch}, {"n_ubatch", cfg_.n_ubatch},
               {"n_threads", cfg_.n_threads}, {"n_threads_batch", cfg_.n_threads_batch},
               {"flash_attention", cfg_.flash_attention}, {"kv_cache_location", cfg_.kv_cache_location},
-              {"kv_cache_type", cfg_.kv_cache_type}, {"tool_root", cfg_.tool_root},
+              {"kv_cache_type", cfg_.kv_cache_type},
+              {"temperature", cfg_.sampling.temperature}, {"top_k", cfg_.sampling.top_k},
+              {"top_p", cfg_.sampling.top_p}, {"min_p", cfg_.sampling.min_p},
+              {"repeat_penalty", cfg_.sampling.repeat_penalty}, {"repeat_last_n", cfg_.sampling.repeat_last_n},
+              {"tool_root", cfg_.tool_root},
               {"comfyui_url", cfg_.comfyui_url}, {"comfyui_workflow", cfg_.comfyui_workflow},
               {"archive_db", cfg_.archive_db}, {"archive_shards", cfg_.archive_shards},
               {"write_root", cfg_.write_root},
@@ -328,6 +332,12 @@ void Bridge::on_web_message(const std::wstring& raw) {
         if (cfg_.kv_cache_location != "vram" && cfg_.kv_cache_location != "ram") cfg_.kv_cache_location = "vram";
         cfg_.kv_cache_type = v.value("kv_cache_type", cfg_.kv_cache_type);
         if (cfg_.kv_cache_type != "f16" && cfg_.kv_cache_type != "q8_0" && cfg_.kv_cache_type != "q4_0") cfg_.kv_cache_type = "f16";
+        cfg_.sampling.temperature = std::clamp(v.value("temperature", cfg_.sampling.temperature), 0.0f, 5.0f);
+        cfg_.sampling.top_k = std::clamp(v.value("top_k", cfg_.sampling.top_k), 0, 1000);
+        cfg_.sampling.top_p = std::clamp(v.value("top_p", cfg_.sampling.top_p), 0.0f, 1.0f);
+        cfg_.sampling.min_p = std::clamp(v.value("min_p", cfg_.sampling.min_p), 0.0f, 1.0f);
+        cfg_.sampling.repeat_penalty = std::clamp(v.value("repeat_penalty", cfg_.sampling.repeat_penalty), 0.5f, 2.0f);
+        cfg_.sampling.repeat_last_n = std::clamp(v.value("repeat_last_n", cfg_.sampling.repeat_last_n), 0, 4096);
         cfg_.tool_root = v.value("tool_root", cfg_.tool_root);
         // Config is read from the inference and tool threads without a lock.
         // Rewriting strings like write_root or archive_db underneath a running

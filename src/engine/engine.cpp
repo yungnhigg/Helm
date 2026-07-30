@@ -227,7 +227,19 @@ GenResult Engine::generate_sync(const std::string& prompt, const std::string& gr
         }
         llama_sampler_chain_add(chain, gs);
     }
+    // Repetition penalty runs first, before the distribution is narrowed by
+    // top-k/top-p/temp, so it can actually suppress a token that would
+    // otherwise keep winning every step (the MoE newline-collapse failure).
+    // penalty==1.0 is a true no-op in llama.cpp, so leaving it at the default
+    // costs nothing for models that do not need it.
+    if (cfg_.sampling.repeat_penalty != 1.0f) {
+        llama_sampler_chain_add(chain, llama_sampler_init_penalties(
+            cfg_.sampling.repeat_last_n, cfg_.sampling.repeat_penalty, 0.0f, 0.0f));
+    }
     llama_sampler_chain_add(chain, llama_sampler_init_top_k(cfg_.sampling.top_k));
+    if (cfg_.sampling.top_p < 1.0f) {
+        llama_sampler_chain_add(chain, llama_sampler_init_top_p(cfg_.sampling.top_p, 1));
+    }
     llama_sampler_chain_add(chain, llama_sampler_init_min_p(cfg_.sampling.min_p, 1));
     llama_sampler_chain_add(chain, llama_sampler_init_temp(cfg_.sampling.temperature));
     llama_sampler_chain_add(chain, llama_sampler_init_dist(cfg_.sampling.seed));
