@@ -465,6 +465,8 @@ void AgentLoop::run_turn(const std::string& session_id, const TurnOptions& optio
         if (harmony) call.harmony_raw = r.text;
         store_.append(session_id, call);
 
+        log("tool_call " + name + " " + args.dump());
+
         const Tool* tool = reg_.find(name);
         if (!tool) {
             store_.append(session_id, {Role::Tool, "error: unknown tool", name});
@@ -476,6 +478,7 @@ void AgentLoop::run_turn(const std::string& session_id, const TurnOptions& optio
             try { result = tool->run_sync(args); }
             catch (const std::exception& e) { result = std::string("error: ") + e.what(); }
             catch (...) { result = "error: unknown tool failure"; }
+            log("tool_result " + name + " -> " + (result.size() > 300 ? result.substr(0, 300) + "..." : result));
             result = clamp_tool_result(result, name);
             store_.append(session_id, {Role::Tool, result, name});
             send_for(session_id, "tool_result", {{"name", name}, {"result", result}});
@@ -489,6 +492,8 @@ void AgentLoop::run_turn(const std::string& session_id, const TurnOptions& optio
             [this, session_id, options](int jid, const std::string& jname, JobStatus status, const std::string& result) {
                 const char* s = status == JobStatus::Done ? "done" : status == JobStatus::Cancelled ? "cancelled" : "failed";
                 send_for(session_id, "job_update", {{"id", jid}, {"name", jname}, {"progress", 100}, {"note", result}, {"status", s}});
+                log("job " + std::to_string(jid) + " " + s + " " + jname + " -> " +
+                    (result.size() > 300 ? result.substr(0, 300) + "..." : result));
                 store_.append(session_id, {Role::Tool,
                     clamp_tool_result("job " + std::to_string(jid) + " " + s + ": " + result, jname), jname});
                 schedule_followup(session_id, options);
