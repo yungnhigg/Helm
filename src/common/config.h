@@ -87,6 +87,14 @@ struct Config {
     std::string whisper_model;
     std::string piper_exe;
     std::string piper_voice;
+    // Vision (image description). Not built into the Engine class - the
+    // Engine is single-model and not re-entrant, so a second model runs as an
+    // external CLI process instead, same pattern as ffmpeg/whisper/piper.
+    // CPU-only by design: this must never compete with the main model's VRAM.
+    std::string vision_cli_exe;
+    std::string vision_model;
+    std::string vision_mmproj;
+    bool enable_vision_tools = false;
     // Offline archive: SQLite FTS5 index over the Wikipedia JSONL shards.
     // Empty disables the search_archive tool rather than failing at call time.
     std::string archive_db;
@@ -134,6 +142,7 @@ struct Config {
     std::string resolved_whisper() const;
     std::string resolved_whisper_model() const;
     std::string resolved_piper() const;
+    std::string resolved_vision_cli() const;
     std::string resolved_piper_voice() const;
     std::string resolved_comfyui_workflow() const;
 };

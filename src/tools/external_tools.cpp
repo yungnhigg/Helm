@@ -339,9 +339,20 @@ void register_external_tools(Registry& r, const Config& cfg) {
         }
     });
 
+    // Built at registration time so the description names the actual
+    // configured output directory - same reasoning as write_text_file: the
+    // model should know where the file lands before it acts, not have to
+    // infer or guess it afterward.
+    std::string image_desc =
+        "Generate an image through local ComfyUI. Helm supplies a starter SDXL workflow and "
+        "starts ComfyUI automatically when it is installed but not running. Saved images are "
+        "written to " + cfg.resolved_image_output_dir() + " - if you need to reference, move, or "
+        "open the file afterward, that is the directory to look in. You cannot see the generated "
+        "image yourself; call describe_image on the saved path afterward if you want to verify what "
+        "it actually looks like before reporting success.";
     r.add({
         "generate_image",
-        "Generate an image through local ComfyUI. Helm supplies a starter SDXL workflow and starts ComfyUI automatically when it is installed but not running.",
+        image_desc,
         {{"prompt", ParamType::String, "Positive image prompt"},
          {"negative_prompt", ParamType::String, "Negative prompt, or an empty string"},
          {"width", ParamType::Integer, "Image width in pixels"},
@@ -360,6 +371,54 @@ void register_external_tools(Registry& r, const Config& cfg) {
                 L"--output-dir", output.wstring(),
                 L"--start-command", utf8_to_wide(c->tool_root + "\\START_COMFYUI.cmd")}, 1200, &job);
             return require_success(result, "ComfyUI image generation");
+        }
+    });
+
+    r.add({
+        "describe_image",
+        "Describe the contents of a local image file using a small CPU-only vision model. This is "
+        "the only way to know what an image actually looks like - you cannot see images otherwise, "
+        "including ones you just generated with generate_image. Runs entirely on CPU so it never "
+        "competes with the main model for VRAM. The description is a short paragraph, not an "
+        "exhaustive account, so use it to check a generation succeeded or to identify a file, not as "
+        "a substitute for real vision on fine detail.",
+        {{"path", ParamType::String, "Absolute path to a local image file (PNG or JPEG)"}},
+        ToolClass::Job, {},
+        [c](const nlohmann::json& a, JobHandle& job) -> std::string {
+            if (!c->enable_vision_tools) return "error: vision tools are disabled in Settings";
+            const fs::path exe = utf8_to_wide(c->resolved_vision_cli());
+            if (!fs::exists(exe)) return "error: vision CLI not found at " + c->resolved_vision_cli() +
+                " - set it in Settings, or build/download llama-mtmd-cli.exe.";
+            const fs::path model = utf8_to_wide(c->vision_model);
+            const fs::path mmproj = utf8_to_wide(c->vision_mmproj);
+            if (c->vision_model.empty() || !fs::exists(model))
+                return "error: vision model path is not set or does not exist. Configure it in Settings.";
+            if (c->vision_mmproj.empty() || !fs::exists(mmproj))
+                return "error: vision mmproj (projector) path is not set or does not exist. Configure it in Settings.";
+            const fs::path image = utf8_to_wide(a.at("path").get<std::string>());
+            if (!fs::exists(image)) return "error: image file does not exist at that path";
+
+            // CPU-only (-ngl 0, --no-mmproj-offload): this must never touch
+            // the VRAM the main text model is using. -c 4096 is generous
+            // headroom for one image's tokens plus a short prompt - it is the
+            // CLI's OWN internal context and cannot overflow regardless of
+            // which small vision model is configured. -n caps the model's
+            // own output length, which is what actually protects the CALLING
+            // agent's context: a short, bounded caption comes back as the
+            // tool result instead of an unbounded ramble. clamp_tool_result
+            // is still applied on the result as a second, independent net.
+            auto result = run_process_capture(exe.wstring(), {
+                L"-m", model.wstring(),
+                L"--mmproj", mmproj.wstring(),
+                L"--image", image.wstring(),
+                L"-p", L"Describe this image in three sentences or fewer: what is depicted, the "
+                       L"overall composition, and anything that looks visually wrong or malformed.",
+                L"-ngl", L"0",
+                L"--no-mmproj-offload",
+                L"-c", L"4096",
+                L"-n", L"220"
+            }, L"", 180, &job);
+            return require_success(result, "image description");
         }
     });
 

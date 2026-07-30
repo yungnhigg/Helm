@@ -99,13 +99,25 @@ void register_tool_files(Registry& r, const Config& cfg) {
         {}
     });
 
-    r.add({
-        "write_text_file",
+    // Built at registration time, not as a static literal, so the tool's own
+    // description names the ACTUAL configured write_root - the model reads
+    // this before it ever calls the tool, instead of discovering the
+    // restriction only after a rejected write. When write_root is empty
+    // (unrestricted) the sentence is omitted rather than pointing at nothing.
+    std::string write_desc =
         "Write UTF-8 text to a local file. Parent directories are created. A file large enough to "
         "risk exceeding your generation token budget in one call MUST be split: write the first part "
         "with overwrite=true, append=false, then write each following part with append=true. Never "
         "try to emit an entire large file's content in a single call - it will be cut off mid-string "
-        "and nothing will be saved. Use overwrite=false (and append=false) unless replacement is intended.",
+        "and nothing will be saved. Use overwrite=false (and append=false) unless replacement is intended.";
+    if (!cfg.write_root.empty()) {
+        write_desc += " Writes are confined to " + cfg.write_root +
+            " and its subfolders - always use a path under there, never guess a different location.";
+    }
+
+    r.add({
+        "write_text_file",
+        write_desc,
         {{"path", ParamType::String, "Destination path"},
          {"content", ParamType::String, "UTF-8 text for this part of the file"},
          {"overwrite", ParamType::Boolean, "Whether an existing file may be replaced. Ignored when append is true."},

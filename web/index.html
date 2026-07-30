@@ -214,6 +214,13 @@
         <label><input id="setting-desktop-tools" type="checkbox"> Desktop controls</label>
         <label><input id="setting-compression" type="checkbox"> Conversation compression</label>
         <label><input id="setting-archive-tools" type="checkbox"> Offline archive</label>
+        <label><input id="setting-vision-tools" type="checkbox"> Vision (describe_image)</label>
+      </div>
+      <p class="perm-hint">Vision runs a small model on CPU only, never competing with the main model's VRAM. Requires llama-mtmd-cli.exe plus a vision GGUF and its matching mmproj file.</p>
+      <div class="form-grid" style="margin-top:8px">
+        <label class="full"><span>Vision model (GGUF)</span><input id="setting-vision-model" type="text" spellcheck="false" placeholder="F:\AI\Models\gemma-3-4b-it-Q4_K_M.gguf"></label>
+        <label class="full"><span>Vision projector (mmproj)</span><input id="setting-vision-mmproj" type="text" spellcheck="false" placeholder="F:\AI\Models\mmproj-gemma-3-4b-it.gguf"></label>
+        <label class="full"><span>llama-mtmd-cli.exe path — empty uses the default under Tool root</span><input id="setting-vision-cli" type="text" spellcheck="false" placeholder="F:\AI Tools\llama.cpp\llama-mtmd-cli.exe"></label>
       </div>
       <div class="form-grid" style="margin-top:12px">
         <label class="full"><span>Write root — file writes are confined here; empty means anywhere</span><input id="setting-write-root" type="text" spellcheck="false" placeholder="F:\AgentScratch"></label>

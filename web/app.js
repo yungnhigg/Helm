@@ -1098,6 +1098,7 @@ function renderBuiltInTools() {
     if (name === 'search_web' || name === 'fetch_web_page') return state.settings.enable_web_tools !== false && !!detected.python;
     if (name === 'generate_image') return state.settings.enable_image_tools !== false && !!detected.python && !!detected.comfy_workflow;
     if (name === 'speak_text') return state.settings.enable_voice_tools !== false && !!detected.piper && !!detected.piper_voice;
+    if (name === 'describe_image') return state.settings.enable_vision_tools === true && !!detected.vision_cli && !!detected.vision_model && !!detected.vision_mmproj;
     if (name === 'extract_document') return state.settings.enable_document_tools !== false && !!detected.python;
     if (name.startsWith('desktop_')) return state.settings.enable_desktop_tools === true && !!detected.python;
     return true;
@@ -1165,6 +1166,10 @@ function populateSettings() {
   $('setting-desktop-tools').checked = v.enable_desktop_tools === true;
   $('setting-compression').checked = v.enable_compression !== false;
   $('setting-archive-tools').checked = v.enable_archive_tools !== false;
+  $('setting-vision-tools').checked = v.enable_vision_tools === true;
+  setValue('setting-vision-model', v.vision_model || '');
+  setValue('setting-vision-mmproj', v.vision_mmproj || '');
+  setValue('setting-vision-cli', v.vision_cli_exe || '');
   setValue('setting-write-root', v.write_root || '');
   setValue('setting-image-output-dir', v.image_output_dir || '');
   setValue('setting-archive-db', v.archive_db || '');
@@ -1178,7 +1183,8 @@ function renderDetection() {
   const names = {
     python: 'Tool runtime', ffmpeg: 'FFmpeg', whisper: 'Whisper', whisper_model: 'Whisper model',
     piper: 'Piper', piper_voice: 'Piper voice', comfy_workflow: 'Comfy workflow',
-    browser: 'JS page rendering', archive: 'Offline archive'
+    browser: 'JS page rendering', archive: 'Offline archive',
+    vision_cli: 'Vision CLI', vision_model: 'Vision model', vision_mmproj: 'Vision mmproj'
   };
   for (const [key, label] of Object.entries(names)) {
     const chip = document.createElement('span');
@@ -1331,6 +1337,10 @@ function saveSettings() {
       enable_desktop_tools: $('setting-desktop-tools').checked,
       enable_compression: $('setting-compression').checked,
       enable_archive_tools: $('setting-archive-tools').checked,
+      enable_vision_tools: $('setting-vision-tools').checked,
+      vision_model: $('setting-vision-model').value.trim(),
+      vision_mmproj: $('setting-vision-mmproj').value.trim(),
+      vision_cli_exe: $('setting-vision-cli').value.trim(),
       write_root: $('setting-write-root').value.trim(),
       image_output_dir: $('setting-image-output-dir').value.trim(),
       archive_db: $('setting-archive-db').value.trim(),

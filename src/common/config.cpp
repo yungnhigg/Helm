@@ -35,6 +35,10 @@ static void load_runtime_fields(const json& j, Config& c) {
     c.whisper_model = j.value("whisper_model", c.whisper_model);
     c.piper_exe = j.value("piper_exe", c.piper_exe);
     c.piper_voice = j.value("piper_voice", c.piper_voice);
+    c.vision_cli_exe = j.value("vision_cli_exe", c.vision_cli_exe);
+    c.vision_model = j.value("vision_model", c.vision_model);
+    c.vision_mmproj = j.value("vision_mmproj", c.vision_mmproj);
+    c.enable_vision_tools = j.value("enable_vision_tools", c.enable_vision_tools);
     c.max_autonomous_iterations = std::clamp(j.value("max_autonomous_iterations", c.max_autonomous_iterations), 4, 400);
     c.write_root = j.value("write_root", c.write_root);
     c.image_output_dir = j.value("image_output_dir", c.image_output_dir);
@@ -194,6 +198,8 @@ void Config::persist_runtime_settings() const {
         {"tool_root", tool_root}, {"tool_python", tool_python}, {"ffmpeg_exe", ffmpeg_exe},
         {"whisper_exe", whisper_exe}, {"whisper_model", whisper_model},
         {"piper_exe", piper_exe}, {"piper_voice", piper_voice},
+        {"vision_cli_exe", vision_cli_exe}, {"vision_model", vision_model}, {"vision_mmproj", vision_mmproj},
+        {"enable_vision_tools", enable_vision_tools},
         {"max_autonomous_iterations", max_autonomous_iterations},
         {"write_root", write_root}, {"image_output_dir", image_output_dir},
         {"archive_db", archive_db}, {"archive_shards", archive_shards},
@@ -229,6 +235,7 @@ std::string Config::resolved_ffmpeg() const { return fallback_path(ffmpeg_exe, t
 std::string Config::resolved_whisper() const { return fallback_path(whisper_exe, tool_root + "\\whisper.cpp\\build\\bin\\Release\\whisper-cli.exe"); }
 std::string Config::resolved_whisper_model() const { return fallback_path(whisper_model, tool_root + "\\Models\\ggml-base.en.bin"); }
 std::string Config::resolved_piper() const { return fallback_path(piper_exe, tool_root + "\\HelmToolRuntime\\Scripts\\piper.exe"); }
+std::string Config::resolved_vision_cli() const { return fallback_path(vision_cli_exe, tool_root + "\\llama.cpp\\llama-mtmd-cli.exe"); }
 std::string Config::resolved_piper_voice() const { return fallback_path(piper_voice, tool_root + "\\Voices\\en_US-lessac-medium.onnx"); }
 std::string Config::resolved_image_output_dir() const {
     return fallback_path(image_output_dir, app_data_dir() + "generated");

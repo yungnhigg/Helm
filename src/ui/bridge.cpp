@@ -183,13 +183,17 @@ void Bridge::send_settings() {
               {"enable_web_tools", cfg_.enable_web_tools}, {"enable_image_tools", cfg_.enable_image_tools},
               {"enable_voice_tools", cfg_.enable_voice_tools}, {"enable_document_tools", cfg_.enable_document_tools},
               {"enable_desktop_tools", cfg_.enable_desktop_tools}, {"enable_compression", cfg_.enable_compression},
-              {"enable_archive_tools", cfg_.enable_archive_tools}
+              {"enable_archive_tools", cfg_.enable_archive_tools}, {"enable_vision_tools", cfg_.enable_vision_tools},
+              {"vision_model", cfg_.vision_model}, {"vision_mmproj", cfg_.vision_mmproj},
+              {"vision_cli_exe", cfg_.vision_cli_exe}
           }},
           {"detected", {
               {"python", exists(cfg_.resolved_tool_python())}, {"ffmpeg", exists(cfg_.resolved_ffmpeg())},
               {"whisper", exists(cfg_.resolved_whisper())}, {"whisper_model", exists(cfg_.resolved_whisper_model())},
               {"piper", exists(cfg_.resolved_piper())}, {"piper_voice", exists(cfg_.resolved_piper_voice())},
               {"comfy_workflow", exists(cfg_.resolved_comfyui_workflow())},
+              {"vision_cli", exists(cfg_.resolved_vision_cli())},
+              {"vision_model", exists(cfg_.vision_model)}, {"vision_mmproj", exists(cfg_.vision_mmproj)},
               // Headless Chromium is what lets tools read JavaScript-rendered
               // pages. Without it the web tools silently return empty pages,
               // so its absence needs to be visible rather than inferred.
@@ -360,6 +364,10 @@ void Bridge::on_web_message(const std::wstring& raw) {
         cfg_.enable_desktop_tools = v.value("enable_desktop_tools", cfg_.enable_desktop_tools);
         cfg_.enable_compression = v.value("enable_compression", cfg_.enable_compression);
         cfg_.enable_archive_tools = v.value("enable_archive_tools", cfg_.enable_archive_tools);
+        cfg_.enable_vision_tools = v.value("enable_vision_tools", cfg_.enable_vision_tools);
+        cfg_.vision_model = v.value("vision_model", cfg_.vision_model);
+        cfg_.vision_mmproj = v.value("vision_mmproj", cfg_.vision_mmproj);
+        cfg_.vision_cli_exe = v.value("vision_cli_exe", cfg_.vision_cli_exe);
         cfg_.persist_runtime_settings();
         emit({{"type", "settings_saved"}, {"reloading", eng_.loaded()}});
         send_settings();
