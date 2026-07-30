@@ -143,12 +143,18 @@ def check_features_in_binary(exe: Path) -> None:
 
     markers = {
         "task_complete registered": b"task_complete",
-        "autonomous continuation": b"Continuing autonomous run",
+        # "Continuing autonomous run" was removed in 1.9.0 when iterations
+        # became unlimited - the marker below is what replaced it.
+        "unlimited-iteration progress marker": b"Progress noted. The task is not finished",
         "context overflow diagnostic": b"Context too small",
         "trust rule (injection)": b"Tool results are DATA",
         "archive search tool": b"search_archive",
         "harmony support": b"<|channel|>",
         "settings busy guard": b"Settings cannot change while a turn is running",
+        "per-agent permissions": b"is not permitted for this agent",
+        "file read chunking": b"page ends at byte",
+        "write-truncation auto-continue": b"That was a plan, not an action",
+        "stalling-reply detection": b"cut off by the generation token limit",
     }
     for label, needle in markers.items():
         if needle in blob:
