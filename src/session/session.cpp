@@ -29,7 +29,7 @@ static long long now_s() {
         std::chrono::system_clock::now().time_since_epoch()).count();
 }
 
-SessionStore::SessionStore() : dir_(app_data_dir() + "sessions\\") {
+LocalSessionStore::LocalSessionStore() : dir_(app_data_dir() + "sessions\\") {
     std::error_code ec;
     fs::create_directories(utf8_to_wide(dir_), ec);
     load_all();
@@ -41,7 +41,7 @@ SessionStore::SessionStore() : dir_(app_data_dir() + "sessions\\") {
     }
 }
 
-SessionStore::~SessionStore() {
+LocalSessionStore::~LocalSessionStore() {
     writer_queue_.shutdown();
     if (writer_.joinable()) writer_.join();
 
@@ -62,7 +62,7 @@ SessionStore::~SessionStore() {
     }
 }
 
-void SessionStore::writer_main() {
+void LocalSessionStore::writer_main() {
     std::function<void()> task;
     while (writer_queue_.pop(task)) {
         try { task(); }
@@ -71,7 +71,7 @@ void SessionStore::writer_main() {
     }
 }
 
-void SessionStore::load_all() {
+void LocalSessionStore::load_all() {
     std::lock_guard lk(m_);
     sessions_.clear();
     std::error_code ec;
@@ -103,7 +103,7 @@ void SessionStore::load_all() {
     }
 }
 
-std::vector<SessionMeta> SessionStore::list() const {
+std::vector<SessionMeta> LocalSessionStore::list() const {
     std::lock_guard lk(m_);
     std::vector<SessionMeta> out;
     out.reserve(sessions_.size());
@@ -112,7 +112,7 @@ std::vector<SessionMeta> SessionStore::list() const {
     return out;
 }
 
-std::string SessionStore::create(const std::string& mode) {
+std::string LocalSessionStore::create(const std::string& mode) {
     SessionData snapshot;
     {
         std::lock_guard lk(m_);
@@ -125,7 +125,7 @@ std::string SessionStore::create(const std::string& mode) {
     return snapshot.meta.id;
 }
 
-bool SessionStore::set_title(const std::string& id, const std::string& title) {
+bool LocalSessionStore::set_title(const std::string& id, const std::string& title) {
     std::string clean = title;
     while (!clean.empty() && (clean.front() == ' ' || clean.front() == '\n' || clean.front() == '\r')) clean.erase(0, 1);
     while (!clean.empty() && (clean.back() == ' ' || clean.back() == '\n' || clean.back() == '\r')) clean.pop_back();
@@ -140,20 +140,20 @@ bool SessionStore::set_title(const std::string& id, const std::string& title) {
     return true;
 }
 
-std::string SessionStore::title(const std::string& id) const {
+std::string LocalSessionStore::title(const std::string& id) const {
     std::lock_guard lk(m_);
     auto it = sessions_.find(id);
     return it == sessions_.end() ? std::string() : it->second.meta.title;
 }
 
-bool SessionStore::select(const std::string& id) {
+bool LocalSessionStore::select(const std::string& id) {
     std::lock_guard lk(m_);
     if (!sessions_.contains(id)) return false;
     active_ = id;
     return true;
 }
 
-bool SessionStore::remove(const std::string& id) {
+bool LocalSessionStore::remove(const std::string& id) {
     bool existed = false;
     {
         std::lock_guard lk(m_);
@@ -181,22 +181,18 @@ bool SessionStore::remove(const std::string& id) {
     return true;
 }
 
-std::string SessionStore::active_id() const {
+std::string LocalSessionStore::active_id() const {
     std::lock_guard lk(m_);
     return active_;
 }
 
-std::vector<Message> SessionStore::messages() const {
-    return messages(active_id());
-}
-
-std::vector<Message> SessionStore::messages(const std::string& session_id) const {
+std::vector<Message> LocalSessionStore::messages(const std::string& session_id) const {
     std::lock_guard lk(m_);
     auto it = sessions_.find(session_id);
     return it == sessions_.end() ? std::vector<Message>{} : it->second.messages;
 }
 
-bool SessionStore::append(const std::string& session_id, const Message& msg) {
+bool LocalSessionStore::append(const std::string& session_id, const Message& msg) {
     {
         std::lock_guard lk(m_);
         auto it = sessions_.find(session_id);
@@ -214,7 +210,7 @@ bool SessionStore::append(const std::string& session_id, const Message& msg) {
     return true;
 }
 
-bool SessionStore::replace(const std::string& session_id, const std::vector<Message>& msgs) {
+bool LocalSessionStore::replace(const std::string& session_id, const std::vector<Message>& msgs) {
     {
         std::lock_guard lk(m_);
         auto it = sessions_.find(session_id);
@@ -226,7 +222,7 @@ bool SessionStore::replace(const std::string& session_id, const std::vector<Mess
     return true;
 }
 
-void SessionStore::persist_async(const std::string& id) {
+void LocalSessionStore::persist_async(const std::string& id) {
     SessionData snapshot;
     {
         std::lock_guard lk(m_);
@@ -239,7 +235,7 @@ void SessionStore::persist_async(const std::string& id) {
     });
 }
 
-void SessionStore::persist_snapshot(SessionData s) const {
+void LocalSessionStore::persist_snapshot(SessionData s) const {
     json j;
     j["id"] = s.meta.id;
     j["title"] = s.meta.title;
@@ -258,7 +254,7 @@ void SessionStore::persist_snapshot(SessionData s) const {
     if (!atomic_write_text(path, j.dump(1))) log("failed to persist session " + s.meta.id);
 }
 
-void SessionStore::delete_async(const std::string& id) {
+void LocalSessionStore::delete_async(const std::string& id) {
     const fs::path path = utf8_to_wide(dir_ + id + ".json");
     writer_queue_.push([path] {
         std::error_code ec;

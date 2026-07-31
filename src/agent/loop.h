@@ -50,8 +50,8 @@ struct TurnOptions {
 
 class AgentLoop {
 public:
-    AgentLoop(const Config& cfg, Engine& eng, Registry& reg, SessionStore& store,
-              WorkspaceStore& workspace, JobManager& jobs, MemoryStore& memory, AgentEvents ev);
+    AgentLoop(const Config& cfg, Engine& eng, Registry& reg, ISessionStore& store,
+              WorkspaceStore& workspace, JobManager& jobs, IMemoryStore& memory, AgentEvents ev);
 
     void user_turn(const std::string& session_id, const std::string& text, TurnOptions options);
     bool busy() const { return busy_.load(); }
@@ -99,9 +99,9 @@ private:
     const Config& cfg_;
     Engine& eng_;
     Registry& reg_;
-    SessionStore& store_;
+    ISessionStore& store_;
     WorkspaceStore& workspace_;
-    MemoryStore& memory_;
+    IMemoryStore& memory_;
     JobManager& jobs_;
     AgentWorkLedger ledger_;
     AgentEvents ev_;

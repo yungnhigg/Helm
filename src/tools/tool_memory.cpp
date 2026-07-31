@@ -9,8 +9,8 @@ namespace lar {
 // are the deterministic path and work in chat mode too, where no tools exist;
 // these let the model act on "add that to memory", where resolving "that"
 // needs the conversation.
-void register_tool_memory(Registry& r, const Config& cfg, MemoryStore& memory) {
-    MemoryStore* m = &memory;
+void register_tool_memory(Registry& r, const Config& cfg, IMemoryStore& memory) {
+    IMemoryStore* m = &memory;
     const Config* c = &cfg;
 
     r.add({

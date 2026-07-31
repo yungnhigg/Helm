@@ -55,8 +55,8 @@ struct BusyReset {
 };
 }
 
-AgentLoop::AgentLoop(const Config& cfg, Engine& eng, Registry& reg, SessionStore& store,
-                     WorkspaceStore& workspace, JobManager& jobs, MemoryStore& memory, AgentEvents ev)
+AgentLoop::AgentLoop(const Config& cfg, Engine& eng, Registry& reg, ISessionStore& store,
+                     WorkspaceStore& workspace, JobManager& jobs, IMemoryStore& memory, AgentEvents ev)
     : cfg_(cfg), eng_(eng), reg_(reg), store_(store), workspace_(workspace), memory_(memory),
       jobs_(jobs), ev_(std::move(ev)) {
     GrammarOptions gopt{cfg_.enable_thinking, true};

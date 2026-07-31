@@ -29,9 +29,9 @@ struct App {
     std::unique_ptr<Engine> engine;
     Registry registry;
     std::unique_ptr<JobManager> jobs;
-    std::unique_ptr<SessionStore> store;
+    std::unique_ptr<LocalSessionStore> store;
     std::unique_ptr<WorkspaceStore> workspace;
-    std::unique_ptr<MemoryStore> memory;
+    std::unique_ptr<LocalMemoryStore> memory;
     std::unique_ptr<AgentLoop> loop;
     std::unique_ptr<Bridge> bridge;
 
@@ -228,9 +228,9 @@ int WINAPI wWinMain(HINSTANCE inst, HINSTANCE, PWSTR, int show) {
 
     g.engine = std::make_unique<Engine>(g.cfg);
     g.jobs = std::make_unique<JobManager>(2);
-    g.store = std::make_unique<SessionStore>();
+    g.store = std::make_unique<LocalSessionStore>();
     g.workspace = std::make_unique<WorkspaceStore>(g.cfg);
-    g.memory = std::make_unique<MemoryStore>(static_cast<size_t>(std::max(1024, g.cfg.memory_budget_bytes)));
+    g.memory = std::make_unique<LocalMemoryStore>(static_cast<size_t>(std::max(1024, g.cfg.memory_budget_bytes)));
 
     register_tool_time(g.registry);
     register_tool_dice(g.registry);

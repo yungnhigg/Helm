@@ -11,8 +11,8 @@ namespace lar {
 class Engine;
 class AgentLoop;
 class JobManager;
-class SessionStore;
-class MemoryStore;
+class ISessionStore;
+class IMemoryStore;
 class WorkspaceStore;
 class Registry;
 struct Config;
@@ -21,8 +21,8 @@ constexpr UINT WM_APP_EMIT = WM_APP + 1;
 
 class Bridge {
 public:
-    Bridge(Config& cfg, Engine& eng, AgentLoop& loop, JobManager& jobs, SessionStore& store,
-           MemoryStore& memory,
+    Bridge(Config& cfg, Engine& eng, AgentLoop& loop, JobManager& jobs, ISessionStore& store,
+           IMemoryStore& memory,
            WorkspaceStore& workspace, Registry& reg, HWND hwnd,
            std::function<void(const std::wstring&)> post_to_webview);
 
@@ -58,8 +58,8 @@ private:
     Engine& eng_;
     AgentLoop& loop_;
     JobManager& jobs_;
-    SessionStore& store_;
-    MemoryStore& memory_;
+    ISessionStore& store_;
+    IMemoryStore& memory_;
     WorkspaceStore& workspace_;
     Registry& reg_;
     HWND hwnd_;

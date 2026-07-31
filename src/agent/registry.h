@@ -13,7 +13,7 @@
 namespace lar {
 
 class JobHandle; // agent/jobs.h
-class MemoryStore; // session/memory.h
+class IMemoryStore; // session/memory.h
 struct Config;   // common/config.h
 
 enum class ToolClass { Sync, Job };
@@ -78,7 +78,7 @@ void register_tool_demo_job(Registry&);
 void register_tool_files(Registry&, const Config&);
 void register_tool_process(Registry&, const Config&);
 void register_tool_web_crawl(Registry&);
-void register_tool_memory(Registry&, const Config&, MemoryStore&);
+void register_tool_memory(Registry&, const Config&, IMemoryStore&);
 void register_external_tools(Registry&, const Config&);
 
 } // namespace lar

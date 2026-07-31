@@ -28,28 +28,43 @@ struct MemoryStatus {
     size_t budget = 0;
 };
 
-class MemoryStore {
+// The memory seam for Phase E's server backend, mirroring ISessionStore.
+class IMemoryStore {
 public:
-    explicit MemoryStore(size_t budget_bytes);
+    virtual ~IMemoryStore() = default;
 
     // Raw file contents, exactly as stored.
-    std::string text() const;
-    size_t bytes() const;
-    size_t budget() const { return budget_; }
+    virtual std::string text() const = 0;
+    virtual size_t bytes() const = 0;
+    virtual size_t budget() const = 0;
 
     // Replace the whole file (settings editor). Refuses if over budget.
-    MemoryStatus replace(const std::string& text);
+    virtual MemoryStatus replace(const std::string& text) = 0;
 
     // Append one entry as a bullet. Refuses if it would exceed budget.
-    MemoryStatus append(const std::string& entry);
+    virtual MemoryStatus append(const std::string& entry) = 0;
 
     // Remove entries containing `needle` (case-insensitive). Reports the count.
-    MemoryStatus forget(const std::string& needle);
+    virtual MemoryStatus forget(const std::string& needle) = 0;
 
     // Markdown block for the system prompt, or empty when there is nothing.
-    std::string prompt_block() const;
+    virtual std::string prompt_block() const = 0;
 
-    std::string path() const { return path_; }
+    virtual std::string path() const = 0;
+};
+
+class LocalMemoryStore final : public IMemoryStore {
+public:
+    explicit LocalMemoryStore(size_t budget_bytes);
+
+    std::string text() const override;
+    size_t bytes() const override;
+    size_t budget() const override { return budget_; }
+    MemoryStatus replace(const std::string& text) override;
+    MemoryStatus append(const std::string& entry) override;
+    MemoryStatus forget(const std::string& needle) override;
+    std::string prompt_block() const override;
+    std::string path() const override { return path_; }
 
 private:
     bool load();

@@ -33,26 +33,46 @@ struct SessionMeta {
     std::string mode = "chat";
 };
 
-class SessionStore {
+// The store seam for Phase E's server backend: everything that consumes
+// sessions talks to this interface. LocalSessionStore owns today's on-disk
+// JSON format; a RemoteSessionStore will speak the server protocol behind
+// the same ten methods.
+class ISessionStore {
 public:
-    SessionStore();
-    ~SessionStore();
+    virtual ~ISessionStore() = default;
 
-    std::vector<SessionMeta> list() const;
-    std::string create(const std::string& mode = "chat");
-    bool select(const std::string& id);
-    bool remove(const std::string& id);
+    virtual std::vector<SessionMeta> list() const = 0;
+    virtual std::string create(const std::string& mode = "chat") = 0;
+    virtual bool select(const std::string& id) = 0;
+    virtual bool remove(const std::string& id) = 0;
     // Explicit titles: agent sessions carry their agent's name, and chat
     // sessions get a model-written summary after the first exchange. A title
     // set here wins over append()'s first-message placeholder derivation.
-    bool set_title(const std::string& id, const std::string& title);
-    std::string title(const std::string& id) const;
+    virtual bool set_title(const std::string& id, const std::string& title) = 0;
+    virtual std::string title(const std::string& id) const = 0;
 
-    std::string active_id() const;
-    std::vector<Message> messages() const;
-    std::vector<Message> messages(const std::string& session_id) const;
-    bool append(const std::string& session_id, const Message& m);
-    bool replace(const std::string& session_id, const std::vector<Message>& msgs);
+    virtual std::string active_id() const = 0;
+    virtual std::vector<Message> messages(const std::string& session_id) const = 0;
+    virtual bool append(const std::string& session_id, const Message& m) = 0;
+    virtual bool replace(const std::string& session_id, const std::vector<Message>& msgs) = 0;
+};
+
+class LocalSessionStore final : public ISessionStore {
+public:
+    LocalSessionStore();
+    ~LocalSessionStore() override;
+
+    std::vector<SessionMeta> list() const override;
+    std::string create(const std::string& mode = "chat") override;
+    bool select(const std::string& id) override;
+    bool remove(const std::string& id) override;
+    bool set_title(const std::string& id, const std::string& title) override;
+    std::string title(const std::string& id) const override;
+
+    std::string active_id() const override;
+    std::vector<Message> messages(const std::string& session_id) const override;
+    bool append(const std::string& session_id, const Message& m) override;
+    bool replace(const std::string& session_id, const std::vector<Message>& msgs) override;
 
 private:
     struct SessionData {

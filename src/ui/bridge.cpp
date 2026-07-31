@@ -22,8 +22,8 @@ using nlohmann::json;
 
 namespace lar {
 
-Bridge::Bridge(Config& cfg, Engine& eng, AgentLoop& loop, JobManager& jobs, SessionStore& store,
-               MemoryStore& memory,
+Bridge::Bridge(Config& cfg, Engine& eng, AgentLoop& loop, JobManager& jobs, ISessionStore& store,
+               IMemoryStore& memory,
                WorkspaceStore& workspace, Registry& reg, HWND hwnd,
                std::function<void(const std::wstring&)> post)
     : cfg_(cfg), eng_(eng), loop_(loop), jobs_(jobs), store_(store), memory_(memory),

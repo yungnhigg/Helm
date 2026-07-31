@@ -23,12 +23,12 @@ static std::string trim(const std::string& s) {
     return s.substr(a, b - a);
 }
 
-MemoryStore::MemoryStore(size_t budget_bytes)
+LocalMemoryStore::LocalMemoryStore(size_t budget_bytes)
     : path_(app_data_dir() + "memory.md"), budget_(budget_bytes) {
     load();
 }
 
-bool MemoryStore::load() {
+bool LocalMemoryStore::load() {
     std::ifstream f(fs::path(utf8_to_wide(path_)), std::ios::binary);
     std::ostringstream ss;
     const bool opened = static_cast<bool>(f);
@@ -43,28 +43,28 @@ bool MemoryStore::load() {
 // Assumes m_ is already held. append/forget/replace are read-modify-write and
 // must hold the lock across the whole sequence, so they cannot call a version
 // that locks again - std::mutex is not recursive.
-bool MemoryStore::save_locked(const std::string& text) {
+bool LocalMemoryStore::save_locked(const std::string& text) {
     if (!atomic_write_text(fs::path(utf8_to_wide(path_)), text)) return false;
     cache_ = text;
     return true;
 }
 
-bool MemoryStore::save(const std::string& text) {
+bool LocalMemoryStore::save(const std::string& text) {
     std::lock_guard<std::mutex> guard(m_);
     return save_locked(text);
 }
 
-std::string MemoryStore::text() const {
+std::string LocalMemoryStore::text() const {
     std::lock_guard<std::mutex> guard(m_);
     return cache_;
 }
 
-size_t MemoryStore::bytes() const {
+size_t LocalMemoryStore::bytes() const {
     std::lock_guard<std::mutex> guard(m_);
     return cache_.size();
 }
 
-MemoryStatus MemoryStore::replace(const std::string& text) {
+MemoryStatus LocalMemoryStore::replace(const std::string& text) {
     std::lock_guard<std::mutex> guard(m_);
     MemoryStatus st;
     st.budget = budget_;
@@ -80,7 +80,7 @@ MemoryStatus MemoryStore::replace(const std::string& text) {
     return st;
 }
 
-MemoryStatus MemoryStore::append(const std::string& entry) {
+MemoryStatus LocalMemoryStore::append(const std::string& entry) {
     std::lock_guard<std::mutex> guard(m_);
     MemoryStatus st;
     st.budget = budget_;
@@ -118,7 +118,7 @@ MemoryStatus MemoryStore::append(const std::string& entry) {
     return st;
 }
 
-MemoryStatus MemoryStore::forget(const std::string& needle) {
+MemoryStatus LocalMemoryStore::forget(const std::string& needle) {
     std::lock_guard<std::mutex> guard(m_);
     MemoryStatus st;
     st.budget = budget_;
@@ -152,7 +152,7 @@ MemoryStatus MemoryStore::forget(const std::string& needle) {
     return st;
 }
 
-std::string MemoryStore::prompt_block() const {
+std::string LocalMemoryStore::prompt_block() const {
     // Copy under the lock, then build the block from the copy. This is called on
     // the inference thread for every prompt while the tool thread may be writing.
     std::string snapshot;
