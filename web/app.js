@@ -208,6 +208,7 @@ const handlers = {
   turn_accepted(message) {
     if (message.session_id !== state.activeSession) return;
     state.busy = true;
+  state.busySession = state.activeSession;
     if (state.pendingUser) state.pendingUser.classList.remove('pending');
     state.pendingUser = null;
     state.attachments = [];
@@ -896,6 +897,7 @@ function sendMessage() {
 }
 
 function updateComposerState() {
+  renderActivity();
   $('send').disabled = state.busy;
   $('send').hidden = state.busy;
   $('input').disabled = false;
@@ -1377,12 +1379,15 @@ $('halt-model').onclick = () => {
 function renderActivity() {
   const pill = $('activity-pill');
   if (!pill) return;
+  // "Busy" covers the whole turn - token generation AND the gaps while a tool
+  // or job runs. Keying off gen_started alone left the pill dark exactly when
+  // the model was mid-tool, which is when you most want the halt.
   const running = state.busy || state.agentActive;
-  pill.hidden = !running;
-  if (!running) return;
-  $('activity-label').textContent = state.agentActive
-    ? (state.busy ? 'Agent active' : 'Agent queued')
-    : 'Generating';
+  pill.classList.toggle('idle', !running);
+  $('halt-model').disabled = !running;
+  $('activity-label').textContent = !running
+    ? 'Idle'
+    : state.agentActive ? 'Agent active' : 'Generating';
 }
 $('mode-chat').onclick = () => { state.activeAgent = null; syncComposerAgent(); setMode('chat'); };
 $('mode-agent').onclick = () => { state.activeAgent = null; syncComposerAgent(); setMode('agent'); };

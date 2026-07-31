@@ -148,12 +148,22 @@ endif()
 set_target_properties(helm PROPERTIES OUTPUT_NAME "Helm")
 
 # Ship immutable defaults/assets next to the binary. Mutable state lives under LocalAppData.
-add_custom_command(TARGET helm POST_BUILD
+#
+# This MUST NOT be a POST_BUILD command on `helm`. POST_BUILD only fires when the
+# target actually relinks, so a change to web/ alone - no C++ touched - leaves the
+# binary "up to date", skips the link, and silently skips the copy with it. The
+# result is edited source that never reaches the running app, which is
+# indistinguishable from the patch not applying. A standalone ALL target always
+# runs, and depending on helm keeps the ordering.
+add_custom_target(helm_assets ALL
     COMMAND ${CMAKE_COMMAND} -E copy_directory "${CMAKE_SOURCE_DIR}/web"    "$<TARGET_FILE_DIR:helm>/web"
     COMMAND ${CMAKE_COMMAND} -E copy_directory "${CMAKE_SOURCE_DIR}/config" "$<TARGET_FILE_DIR:helm>/config"
     COMMAND ${CMAKE_COMMAND} -E copy_directory "${CMAKE_SOURCE_DIR}/tools_runtime" "$<TARGET_FILE_DIR:helm>/tools_runtime"
     COMMAND ${CMAKE_COMMAND} -E copy_if_different "${CMAKE_SOURCE_DIR}/install_helm_tools.cmd" "$<TARGET_FILE_DIR:helm>/install_helm_tools.cmd"
+    COMMENT "Copying web/, config/, and tools_runtime/ next to Helm.exe"
+    VERBATIM
 )
+add_dependencies(helm_assets helm)
 
 include(CTest)
 if(BUILD_TESTING)
