@@ -59,11 +59,17 @@ struct Config {
     // the oldest turns.
     bool enable_compression = true;
     // Compact when the prompt reaches this fraction of budget, instead of waiting
-    // for overflow. 0.80 = fold old turns at 80% full. 0 or >=1 disables the
+    // for overflow. 0.75 = fold old turns at 75% full. 0 or >=1 disables the
     // early trigger (compact-on-overflow only).
-    double compress_at_fraction = 0.80;
+    double compress_at_fraction = 0.75;
     int compress_keep_recent = 8;     // most recent messages kept verbatim
     int compress_summary_tokens = 448; // generation cap for the summary itself
+
+    // Persistent per-agent work ledger. It is bounded on disk and only a small
+    // task-relevant slice is injected into the prompt.
+    int agent_ledger_max_entries = 512;
+    int agent_ledger_prompt_entries = 24;
+    int agent_ledger_prompt_bytes = 4096;
 
     bool allow_process_tools = false;
     std::vector<std::string> process_allowlist;

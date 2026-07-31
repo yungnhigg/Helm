@@ -1,40 +1,14 @@
 #include "agent/registry.h"
 #include "common/config.h"
 #include "common/util.h"
+#include "tools/file_guard.h"
 #include <filesystem>
 #include <fstream>
 #include <sstream>
 #include <algorithm>
-#include <cwctype>
 
 namespace fs = std::filesystem;
 namespace lar {
-
-static std::wstring lower_w(std::wstring s) {
-    std::transform(s.begin(), s.end(), s.begin(), ::towlower);
-    return s;
-}
-
-// Empty write_root means unrestricted. Otherwise the resolved destination must
-// sit under the configured directory. Comparison is on the canonical path with
-// a trailing separator, so C:\work does not admit C:\workspace.
-static bool within_write_root(const fs::path& target, const std::string& root_utf8, std::string& err) {
-    if (root_utf8.empty()) return true;
-    std::error_code ec;
-    const fs::path root = fs::weakly_canonical(fs::path(utf8_to_wide(root_utf8)), ec);
-    if (ec) { err = "error: write_root in app.json is not a resolvable path"; return false; }
-    const fs::path abs = fs::weakly_canonical(target, ec);
-    if (ec) { err = "error: destination path could not be resolved"; return false; }
-
-    std::wstring r = lower_w(root.wstring());
-    const std::wstring a = lower_w(abs.wstring());
-    if (!r.empty() && r.back() != L'\\') r += L'\\';
-    if (a.size() < r.size() || a.compare(0, r.size(), r) != 0) {
-        err = "error: destination is outside the configured write_root";
-        return false;
-    }
-    return true;
-}
 
 void register_tool_files(Registry& r, const Config& cfg) {
     const Config* c = &cfg;
@@ -44,8 +18,13 @@ void register_tool_files(Registry& r, const Config& cfg) {
         "List files and folders at a local path. Use this before changing an unfamiliar location.",
         {{"path", ParamType::String, "Absolute or user-provided directory path"}},
         ToolClass::Sync,
-        [](const nlohmann::json& a) {
-            const fs::path p = utf8_to_wide(a.at("path").get<std::string>());
+        [c](const nlohmann::json& a) {
+            const std::string scoped_root = a.value("_helm_fs_root", std::string{});
+            const auto resolved = resolve_tool_file_path(a.at("path").get<std::string>(),
+                                                         c->write_root, scoped_root,
+                                                         FileAccessMode::Read);
+            if (!resolved.ok) return resolved.error;
+            const fs::path& p = resolved.path;
             std::error_code ec;
             if (!fs::is_directory(p, ec)) return std::string("error: not a directory");
             std::ostringstream out;
@@ -72,8 +51,13 @@ void register_tool_files(Registry& r, const Config& cfg) {
          {"max_chars", ParamType::Integer, "Bytes to return this page, 1 to 60000. 8000-16000 is a good page size."},
          {"offset", ParamType::Integer, "Byte offset to start at. 0 for the first page; use the value from the previous page's cursor line."}},
         ToolClass::Sync,
-        [](const nlohmann::json& a) {
-            const fs::path p = utf8_to_wide(a.at("path").get<std::string>());
+        [c](const nlohmann::json& a) {
+            const std::string scoped_root = a.value("_helm_fs_root", std::string{});
+            const auto resolved = resolve_tool_file_path(a.at("path").get<std::string>(),
+                                                         c->write_root, scoped_root,
+                                                         FileAccessMode::Read);
+            if (!resolved.ok) return resolved.error;
+            const fs::path& p = resolved.path;
             const int limit = std::clamp(a.value("max_chars", 16000), 1, 60000);
             const long long offset = std::max<long long>(0, a.value("offset", 0));
             std::ifstream f(p, std::ios::binary | std::ios::ate);
@@ -124,20 +108,25 @@ void register_tool_files(Registry& r, const Config& cfg) {
         write_desc,
         {{"path", ParamType::String, "Destination path"},
          {"content", ParamType::String, "UTF-8 text for this part of the file"},
-         {"overwrite", ParamType::Boolean, "Whether an existing file may be replaced. Ignored when append is true."},
-         {"append", ParamType::Boolean, "True to add this content to the end of an existing file instead of replacing it. Use for part 2 onward of a large file."}},
+         {"overwrite", ParamType::Boolean, "Whether an existing file may be replaced. Must be false when append is true."},
+         {"append", ParamType::Boolean, "True to add this content to the end of an existing file. append=true and overwrite=true is invalid."}},
         ToolClass::Sync,
         [c](const nlohmann::json& a) {
-            const fs::path p = utf8_to_wide(a.at("path").get<std::string>());
-            std::string err;
-            if (!within_write_root(p, c->write_root, err)) {
-                log("blocked write outside write_root: " + wide_to_utf8(p.wstring()));
-                return err;
-            }
             const bool append = a.value("append", false);
             const bool overwrite = a.at("overwrite").get<bool>();
+            if (append && overwrite)
+                return std::string("error: append and overwrite cannot both be true; use append=true, overwrite=false for continuation parts");
+
+            const std::string scoped_root = a.value("_helm_fs_root", std::string{});
+            const auto resolved = resolve_tool_file_path(a.at("path").get<std::string>(),
+                                                         c->write_root, scoped_root,
+                                                         FileAccessMode::Write);
+            if (!resolved.ok) {
+                log("blocked file write: " + a.at("path").get<std::string>() + " (" + resolved.error + ")");
+                return resolved.error;
+            }
+            const fs::path& p = resolved.path;
             std::error_code ec;
-            fs::create_directories(p.parent_path(), ec);
             const std::string content = a.at("content").get<std::string>();
             if (append) {
                 // Plain ofstream append - atomic_write_text's write-then-rename
@@ -152,7 +141,15 @@ void register_tool_files(Registry& r, const Config& cfg) {
             if (!atomic_write_text(p, content)) return std::string("error: write failed");
             return std::string("wrote ") + wide_to_utf8(p.wstring());
         },
-        {}
+        {},
+        [](const nlohmann::json& a) -> std::string {
+            if (!a.contains("append") || !a["append"].is_boolean() ||
+                !a.contains("overwrite") || !a["overwrite"].is_boolean())
+                return "error: append and overwrite must both be boolean values";
+            if (a["append"].get<bool>() && a["overwrite"].get<bool>())
+                return "error: append and overwrite cannot both be true; use append=true, overwrite=false for continuation parts";
+            return {};
+        }
     });
 }
 

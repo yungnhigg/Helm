@@ -1,5 +1,0 @@
-[33m743375c[m[33m ([m[1;36mHEAD[m[33m -> [m[1;32mmain[m[33m, [m[1;31morigin/main[m[33m, [m[1;31morigin/HEAD[m[33m)[m Fix start_next_batch emit and reconcile loop to 1.8.1 with repeat-call breaker
-[33m9bed7e7[m Context usage meter under the composer; perpetual agent loop with disk-backed dedup and Loop/Stop controls
-[33mb8b224b[m[33m ([m[1;33mtag: [m[1;33mv1.7.0[m[33m)[m Add github_search API tool to stop URL guessing, sync not job; rebuild UE5 config around verified GitHub data
-[33m881c370[m Show job results in the transcript and log every tool dispatch
-[33mdb48dc0[m Untrack __pycache__ and a stray patch file, extend gitignore

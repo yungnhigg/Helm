@@ -91,20 +91,23 @@ window.HelmAgentUI = (() => {
         click: () => post({ type: 'run_agent', id: agent.id, effort: effort() })
       });
       const loop = actionButton({
-        className: 'secondary agent-action agent-action-loop', icon: '∞', label: 'Loop',
+        className: 'toggle agent-action agent-action-loop', icon: '∞', label: 'Loop',
         title: 'Run fresh-context batches until Stop loop is pressed',
-        click: () => {
+        click: event => {
+          for (const item of document.querySelectorAll('.agent-action-loop')) item.setAttribute('aria-pressed', 'false');
+          event.currentTarget.setAttribute('aria-pressed', 'true');
           post({ type: 'run_agent', id: agent.id, perpetual: true, effort: effort() || 'high' });
           revealStop();
           toast?.('Perpetual loop started. Use Stop loop in the top bar to end it.');
         }
       });
+      loop.setAttribute('aria-pressed', 'false');
       const open = actionButton({
         className: 'secondary agent-action', label: 'Open', title: 'Open this agent without starting it',
         click: () => post({ type: 'open_agent', id: agent.id })
       });
       const rename = actionButton({
-        className: 'ghost agent-action agent-action-quiet', label: 'Rename', title: 'Rename this agent',
+        className: 'secondary agent-action agent-action-quiet', label: 'Rename', title: 'Rename this agent',
         click: () => {
           const next = window.prompt('Rename agent', agent.name);
           if (next === null) return;
@@ -113,7 +116,7 @@ window.HelmAgentUI = (() => {
         }
       });
       const remove = actionButton({
-        className: 'ghost agent-action agent-action-quiet', label: 'Delete', title: 'Delete this agent',
+        className: 'danger agent-action agent-action-quiet', label: 'Delete', title: 'Delete this agent',
         click: () => {
           if (window.confirm(`Delete "${agent.name}"? This cannot be undone.`))
             post({ type: 'delete_agent', id: agent.id });

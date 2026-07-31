@@ -108,6 +108,7 @@ add_executable(helm WIN32
     src/tools/tool_run_control.cpp
     src/agent/loop.cpp
     src/agent/run_guard.cpp
+    src/agent/work_ledger.cpp
     src/agent/jobs.cpp
     src/session/session.cpp
     src/session/memory.cpp
@@ -116,6 +117,7 @@ add_executable(helm WIN32
     src/tools/tool_time.cpp
     src/tools/tool_dice.cpp
     src/tools/tool_demo_job.cpp
+    src/tools/file_guard.cpp
     src/tools/tool_files.cpp
     src/tools/tool_process.cpp
     src/tools/tool_web_crawl.cpp
@@ -198,6 +200,34 @@ if(BUILD_TESTING)
     endif()
     target_include_directories(helm_run_guard_tests PRIVATE src third_party)
     add_test(NAME helm_run_guard_tests COMMAND helm_run_guard_tests)
+
+    add_executable(helm_file_guard_tests
+        tests/test_file_guard.cpp
+        src/tools/file_guard.cpp
+    )
+    target_compile_features(helm_file_guard_tests PRIVATE cxx_std_20)
+    if(MSVC)
+        target_compile_options(helm_file_guard_tests PRIVATE /utf-8)
+    endif()
+    target_include_directories(helm_file_guard_tests PRIVATE src third_party)
+    target_link_libraries(helm_file_guard_tests PRIVATE shell32 ole32)
+    add_test(NAME helm_file_guard_tests COMMAND helm_file_guard_tests)
+
+    add_executable(helm_tool_validation_tests
+        tests/test_tool_validation.cpp
+        src/agent/registry.cpp
+        src/agent/jobs.cpp
+        src/tools/tool_demo_job.cpp
+        src/tools/tool_files.cpp
+        src/tools/file_guard.cpp
+    )
+    target_compile_features(helm_tool_validation_tests PRIVATE cxx_std_20)
+    if(MSVC)
+        target_compile_options(helm_tool_validation_tests PRIVATE /utf-8)
+    endif()
+    target_include_directories(helm_tool_validation_tests PRIVATE src third_party)
+    target_link_libraries(helm_tool_validation_tests PRIVATE shell32 ole32)
+    add_test(NAME helm_tool_validation_tests COMMAND helm_tool_validation_tests)
 
     add_executable(helm_stream_filter_tests
         tests/test_stream_filter.cpp

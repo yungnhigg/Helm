@@ -29,6 +29,10 @@ struct AgentProfile {
     std::string coordinator = "single"; // single | council | router
     std::string config_resource_id;
     std::string site_url;
+    // Optional narrower filesystem boundary for this reusable worker/task.
+    // When set, file tools cannot read or write outside it; global write_root
+    // remains the outer write boundary.
+    std::string filesystem_root;
     std::vector<std::string> rag_ids;
     // Per-agent tool permissions. allowed_tools holds exact registered tool
     // names; permissions_configured distinguishes a deliberately-empty allow-set

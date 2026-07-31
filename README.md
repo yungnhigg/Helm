@@ -134,6 +134,27 @@ One browser is launched per tool call and shared, escalation is capped, and the
 whole search sits under a time budget — otherwise three JS-rendered results
 stack three full browser lifecycles end to end and the tool looks hung.
 
+### Progress watchdog and agent ledger
+
+Tool calls in both Chat and Agent mode pass through a canonical progress
+watchdog. Exact successful repeats are refused, one retry is allowed after a
+concrete failure, and repeated examinations that return the same empty/error
+result are stopped. There is no arbitrary tool-call ceiling: long agents keep
+running while they produce new information or change state.
+
+Reusable agents also keep a bounded work ledger under
+`%LOCALAPPDATA%\Helm\workspace\agent-ledgers`. Helm records material tool
+results automatically and injects only the recent entries relevant to the
+active task. Perpetual batches therefore start with fresh conversation context
+without blindly surveying the same resources again.
+
+An agent may optionally define its own absolute filesystem root. Direct file,
+document, image-description, and seen-list paths for that agent are canonicalized
+through existing symlinks/junctions and must remain inside the agent root; writes
+must also remain inside the global `write_root` when one is configured. Process
+execution remains a separately permissioned capability rather than a filesystem
+sandbox.
+
 ### Memory and compression
 
 `memory.md` is one Markdown file injected into every system prompt, in both
@@ -143,10 +164,13 @@ what is worth keeping records "ok" and its own unaccepted suggestions, and the
 file rots within a week. It is budgeted, and over budget writes are refused
 rather than silently truncated.
 
-When history outgrows the context window, everything except the most recent
-messages is folded into one model-written summary and persisted in its place.
-Summaries chain. The old behaviour — dropping the oldest turns silently —
-remains only as a fallback when compression is off or fails.
+Before generation, Helm measures the fully formatted prompt. At 75% of the
+available history budget, everything except the most recent messages is folded
+into one model-written rolling summary and persisted in place of the originals.
+Later compression replaces that summary instead of accumulating a chain. A
+second aggressive pass handles oversized sessions immediately after reload;
+oldest-first trimming remains only a final fallback when compression is off or
+fails.
 
 ### Slash commands
 

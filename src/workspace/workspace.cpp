@@ -55,6 +55,7 @@ void WorkspaceStore::load() {
             p.coordinator = a.value("coordinator", "single");
             p.config_resource_id = a.value("config_resource_id", "");
             p.site_url = a.value("site_url", "");
+            p.filesystem_root = a.value("filesystem_root", "");
             p.rag_ids = a.value("rag_ids", std::vector<std::string>{});
             p.allowed_tools = a.value("allowed_tools", std::vector<std::string>{});
             p.permissions_configured = a.value("permissions_configured", false);
@@ -74,7 +75,8 @@ void WorkspaceStore::persist_locked() const {
     j["agents"] = json::array();
     for (const auto& a : agents_) j["agents"].push_back({
         {"id", a.id}, {"name", a.name}, {"type", a.type}, {"model_id", a.model_id},
-        {"model_ids", a.model_ids}, {"coordinator", a.coordinator}, {"config_resource_id", a.config_resource_id}, {"site_url", a.site_url}, {"rag_ids", a.rag_ids},
+        {"model_ids", a.model_ids}, {"coordinator", a.coordinator}, {"config_resource_id", a.config_resource_id}, {"site_url", a.site_url},
+        {"filesystem_root", a.filesystem_root}, {"rag_ids", a.rag_ids},
         {"allowed_tools", a.allowed_tools}, {"permissions_configured", a.permissions_configured}
     });
     if (!atomic_write_text(utf8_to_wide(root_ + "workspace.json"), j.dump(1)))
@@ -144,6 +146,7 @@ AgentProfile WorkspaceStore::create_agent(const json& j) {
     a.coordinator = j.value("coordinator", "single");
     a.config_resource_id = j.value("config_resource_id", "");
     a.site_url = j.value("site_url", "");
+    a.filesystem_root = j.value("filesystem_root", "");
     a.rag_ids = j.value("rag_ids", std::vector<std::string>{});
     a.allowed_tools = j.value("allowed_tools", std::vector<std::string>{});
     a.permissions_configured = j.value("permissions_configured", false);
@@ -160,6 +163,8 @@ bool WorkspaceStore::remove_agent(const std::string& id) {
     if (it == agents_.end()) return false;
     agents_.erase(it, agents_.end());
     persist_locked();
+    std::error_code ec;
+    fs::remove(utf8_to_wide(root_ + "agent-ledgers\\" + id + ".json"), ec);
     return true;
 }
 
@@ -281,7 +286,8 @@ json WorkspaceStore::snapshot() const {
     json a = json::array();
     for (const auto& x : agents_) a.push_back({
         {"id", x.id}, {"name", x.name}, {"type", x.type}, {"model_id", x.model_id},
-        {"model_ids", x.model_ids}, {"coordinator", x.coordinator}, {"config_resource_id", x.config_resource_id}, {"site_url", x.site_url}, {"rag_ids", x.rag_ids},
+        {"model_ids", x.model_ids}, {"coordinator", x.coordinator}, {"config_resource_id", x.config_resource_id}, {"site_url", x.site_url},
+        {"filesystem_root", x.filesystem_root}, {"rag_ids", x.rag_ids},
         {"allowed_tools", x.allowed_tools}, {"permissions_configured", x.permissions_configured}
     });
     return {{"resources", r}, {"agents", a}};

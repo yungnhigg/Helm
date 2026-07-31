@@ -56,8 +56,15 @@
   "enable_document_tools": true,
   "enable_desktop_tools": true,
   "enable_compression": true,
+  "compress_at_fraction": 0.75,
   "compress_keep_recent": 8,
   "compress_summary_tokens": 448,
+
+  // Persistent agent progress memory. The ledger is bounded on disk and only
+  // the most relevant recent entries are added to the active agent prompt.
+  "agent_ledger_max_entries": 512,
+  "agent_ledger_prompt_entries": 24,
+  "agent_ledger_prompt_bytes": 4096,
 
   // Prompt envelope. "chatml" is the only format implemented; gpt-oss needs
   // OpenAI's Harmony format and will not tool-call correctly under chatml.

@@ -43,13 +43,15 @@
           </div>
         </div>
         <div class="topbar-actions">
-        <button id="stop-agent" class="ghost" hidden title="Stop the perpetual run after the current batch">■ Stop loop</button>
-          <button id="open-settings" class="icon-btn settings-button" title="Runtime settings">⚙</button>
-        <div class="model-status">
-          <span id="model-led" class="status-dot"></span>
-          <span id="model-status-text">No model loaded</span>
-          <button id="unload-model" class="ghost" hidden>Unload</button>
-        </div>
+          <button id="stop-agent" class="danger" hidden title="Stop the perpetual run after the current batch">■ Stop loop</button>
+          <div class="model-control-group">
+            <button id="open-settings" class="icon-btn settings-button" title="Runtime settings">⚙</button>
+            <div class="model-status">
+              <span id="model-led" class="status-dot"></span>
+              <span id="model-status-text">No model loaded</span>
+              <button id="unload-model" class="ghost" hidden>Unload</button>
+            </div>
+          </div>
         </div>
       </header>
 
@@ -91,7 +93,7 @@
               </div>
               <div class="send-group">
                 <span id="composer-hint">Enter to send · Shift+Enter for newline</span>
-                <button id="stop" class="stop" hidden>Stop</button>
+                <button id="stop" class="danger stop" hidden>■ Stop</button>
                 <button id="send" class="send" title="Send">➤</button>
               </div>
             </div>
@@ -145,6 +147,7 @@
         <label><span>Model</span><select id="agent-model"></select></label>
         <label id="agent-config-row" class="full" hidden><span>Task configuration</span><div class="file-choice"><button id="choose-agent-config" class="secondary">Choose config file</button><span id="agent-config-name">No file selected</span></div></label>
         <label id="site-url-row" class="full" hidden><span>Starting website</span><input id="site-url" type="url" placeholder="https://example.com/docs"></label>
+        <label class="full"><span>Agent filesystem root (optional)</span><input id="agent-filesystem-root" placeholder="F:\AgentScratch\ThisAgent"><small>When set, this agent's file read/write tools cannot leave this folder. The global write_root still applies.</small></label>
         <fieldset class="full"><legend>RAG files</legend><div id="agent-rag-options" class="check-grid"></div></fieldset>
         <fieldset class="full"><legend>Tool permissions</legend>
           <div class="preset-row">

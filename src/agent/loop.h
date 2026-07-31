@@ -2,6 +2,8 @@
 #include "agent/jobs.h"
 #include "agent/prompt_builder.h"
 #include "agent/registry.h"
+#include "agent/run_guard.h"
+#include "agent/work_ledger.h"
 #include "engine/engine.h"
 #include "session/session.h"
 #include "session/memory.h"
@@ -10,6 +12,7 @@
 #include <atomic>
 #include <functional>
 #include <mutex>
+#include <memory>
 
 namespace lar {
 
@@ -32,9 +35,14 @@ struct TurnOptions {
     bool autonomous = false;
     // Perpetual run: when the model calls task_complete, start a fresh session
     // with empty context and run the same agent again until the user stops it.
-    // Dedup lives on disk (archive_seen), so clearing context loses no progress.
+    // The bounded work ledger lives on disk, so clearing conversation context
+    // does not discard verified progress from earlier batches.
     bool perpetual = false;
     int batch_index = 0;
+    // Shared across async job continuations within one batch. A fresh watchdog
+    // is created for every user turn and every perpetual fresh-context batch.
+    std::shared_ptr<ProgressWatchdog> watchdog;
+    std::string task_key;
 };
 
 class AgentLoop {
@@ -62,7 +70,8 @@ private:
                                          int generation_tokens,
                                          bool harmony,
                                          const std::string& effort);
-    bool compress_history(const std::string& session_id, std::vector<Message>& msgs, bool harmony);
+    bool compress_history(const std::string& session_id, std::vector<Message>& msgs,
+                          bool harmony, int keep_recent_override = -1);
     // Cap a tool result so no single one can swallow the context window.
     std::string clamp_tool_result(const std::string& text, const std::string& tool_name) const;
     std::string workspace_prompt(const TurnOptions& options, const std::string& query) const;
@@ -83,6 +92,7 @@ private:
     WorkspaceStore& workspace_;
     MemoryStore& memory_;
     JobManager& jobs_;
+    AgentWorkLedger ledger_;
     AgentEvents ev_;
     std::string agent_grammar_;
     std::string tool_docs_;
@@ -91,9 +101,6 @@ private:
     std::atomic<int> pending_followups_{0};
     // Set by a stop_agent message; checked between perpetual batches.
     std::atomic<bool> stop_requested_{false};
-    // Signatures already made in the current run. The guard prevents a model
-    // from retrying an identical failing call forever without limiting useful work.
-    std::vector<std::string> run_call_signatures_;
 };
 
 } // namespace lar

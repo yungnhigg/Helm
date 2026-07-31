@@ -76,6 +76,9 @@ bool Config::load(std::string& err) {
         load_runtime_fields(j, *this);
         max_gen_tokens = j.value("max_gen_tokens", max_gen_tokens);
         ctx_reserve_tokens = j.value("ctx_reserve_tokens", ctx_reserve_tokens);
+        agent_ledger_max_entries = std::clamp(j.value("agent_ledger_max_entries", agent_ledger_max_entries), 32, 5000);
+        agent_ledger_prompt_entries = std::clamp(j.value("agent_ledger_prompt_entries", agent_ledger_prompt_entries), 4, 128);
+        agent_ledger_prompt_bytes = std::clamp(j.value("agent_ledger_prompt_bytes", agent_ledger_prompt_bytes), 512, 32768);
         allow_process_tools = j.value("allow_process_tools", allow_process_tools);
         if (j.contains("process_allowlist")) process_allowlist = j["process_allowlist"].get<std::vector<std::string>>();
         write_root = j.value("write_root", write_root);

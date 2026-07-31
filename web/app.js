@@ -897,6 +897,7 @@ function openTaskModal() {
   state.pendingConfig = null;
   $('agent-config-name').textContent = 'No file selected';
   $('site-url').value = '';
+  $('agent-filesystem-root').value = '';
   $('agent-name').value = 'Local operator';
   for (const card of document.querySelectorAll('.type-card')) card.classList.toggle('selected', card.dataset.agentType === 'local');
   updateTaskTypeFields();
@@ -930,7 +931,10 @@ function createAgent() {
   const name = $('agent-name').value.trim() || 'Agent';
   const modelId = $('agent-model').value || state.activeModel;
   const siteUrl = $('site-url').value.trim();
+  const filesystemRoot = $('agent-filesystem-root').value.trim();
   if (!modelId) return toast('Add a GGUF model before creating an agent.', true);
+  if (filesystemRoot && !/^(?:[a-zA-Z]:[\\/]|\\\\[^\\/]+[\\/][^\\/]+)/.test(filesystemRoot))
+    return toast('Agent filesystem root must be an absolute Windows path.', true);
   if (state.selectedAgentType === 'task' && !state.pendingConfig) return toast('Choose a task configuration file.', true);
   if (state.selectedAgentType === 'webscraper' && !/^https?:\/\//i.test(siteUrl)) return toast('Enter a valid http or https URL.', true);
   const ragIds = [...$('agent-rag-options').querySelectorAll('input:checked')].map(input => input.value);
@@ -942,6 +946,7 @@ function createAgent() {
       model_id: modelId,
       config_resource_id: state.pendingConfig?.id || '',
       site_url: siteUrl,
+      filesystem_root: filesystemRoot,
       rag_ids: ragIds,
       allowed_tools: selectedAllowedTools(),
       permissions_configured: true
@@ -1337,7 +1342,7 @@ function updateMicState(note = '') {
   else $('composer-hint').textContent = 'Enter to send · Shift+Enter for newline';
 }
 
-const _stopBtn = $('stop-agent'); if (_stopBtn) _stopBtn.onclick = () => { post({ type: 'stop_agent' }); _stopBtn.hidden = true; };
+const _stopBtn = $('stop-agent'); if (_stopBtn) _stopBtn.onclick = () => { post({ type: 'stop_agent' }); _stopBtn.hidden = true; for (const item of document.querySelectorAll('.agent-action-loop')) item.setAttribute('aria-pressed', 'false'); };
 $('mode-chat').onclick = () => { state.activeAgent = null; syncComposerAgent(); setMode('chat'); };
 $('mode-agent').onclick = () => { state.activeAgent = null; syncComposerAgent(); setMode('agent'); };
 $('back-agents').onclick = () => { state.activeAgent = null; showAgentDashboard(); };

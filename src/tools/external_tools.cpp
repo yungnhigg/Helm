@@ -3,6 +3,7 @@
 #include "agent/jobs.h"
 #include "common/config.h"
 #include "common/util.h"
+#include "tools/file_guard.h"
 #include <windows.h>
 #include <mmsystem.h>
 #include <filesystem>
@@ -236,12 +237,19 @@ void register_external_tools(Registry& r, const Config& cfg) {
          {"add", ParamType::String, "Comma-separated identifiers to record, or empty to read the list"}},
         ToolClass::Sync,
         [c](const nlohmann::json& a) -> std::string {
+            const std::string add = a.value("add", std::string());
+            const std::string scoped_root = a.value("_helm_fs_root", std::string{});
+            const auto resolved = resolve_tool_file_path(
+                a.at("file").get<std::string>(), c->write_root, scoped_root,
+                add.empty() ? FileAccessMode::Read : FileAccessMode::Write);
+            if (!resolved.ok) return resolved.error;
+
             const std::string python = c->resolved_tool_python();
             if (!fs::exists(utf8_to_wide(python)))
                 return std::string("error: Python tool runtime not found. Run install_helm_tools.cmd.");
             std::vector<std::wstring> args{helper_script(), L"seen-list",
-                L"--file", utf8_to_wide(a.at("file").get<std::string>()),
-                L"--add", utf8_to_wide(a.value("add", std::string()))};
+                L"--file", resolved.path.wstring(),
+                L"--add", utf8_to_wide(add)};
             auto res = run_process_capture(utf8_to_wide(python), args, L"", 30, nullptr);
             return require_success(res, "seen list");
         },
@@ -395,7 +403,12 @@ void register_external_tools(Registry& r, const Config& cfg) {
                 return "error: vision model path is not set or does not exist. Configure it in Settings.";
             if (c->vision_mmproj.empty() || !fs::exists(mmproj))
                 return "error: vision mmproj (projector) path is not set or does not exist. Configure it in Settings.";
-            const fs::path image = utf8_to_wide(a.at("path").get<std::string>());
+            const std::string scoped_root = a.value("_helm_fs_root", std::string{});
+            const auto resolved = resolve_tool_file_path(a.at("path").get<std::string>(),
+                                                         c->write_root, scoped_root,
+                                                         FileAccessMode::Read);
+            if (!resolved.ok) return resolved.error;
+            const fs::path image = resolved.path;
             if (!fs::exists(image)) return "error: image file does not exist at that path";
 
             // CPU-only (-ngl 0, --no-mmproj-offload): this must never touch
@@ -458,8 +471,13 @@ void register_external_tools(Registry& r, const Config& cfg) {
         [c](const nlohmann::json& a, JobHandle& job) {
             if (!c->enable_document_tools) return std::string("error: document tools are disabled in Settings");
             job.report(10, "extracting document text");
+            const std::string scoped_root = a.value("_helm_fs_root", std::string{});
+            const auto resolved = resolve_tool_file_path(a.at("path").get<std::string>(),
+                                                         c->write_root, scoped_root,
+                                                         FileAccessMode::Read);
+            if (!resolved.ok) return resolved.error;
             const size_t limit = static_cast<size_t>(std::clamp(a.at("max_chars").get<int>(), 1000, 500000));
-            const std::string text = extract_document_text(*c, a.at("path").get<std::string>(), limit);
+            const std::string text = extract_document_text(*c, wide_to_utf8(resolved.path.wstring()), limit);
             return text.empty() ? std::string("error: no text could be extracted") : text;
         }
     });

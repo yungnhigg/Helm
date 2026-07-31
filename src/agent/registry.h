@@ -34,6 +34,12 @@ struct Tool {
     // Job: runs on the tool pool; reports progress through the handle; may run
     // for most of an hour. Returns final result text.
     std::function<std::string(const nlohmann::json& args, JobHandle& job)> run_job;
+    // Optional semantic validation that cannot be expressed by the grammar
+    // (numeric ranges, mutually exclusive flags, path policy, and so on).
+    // Empty means valid; a non-empty string is returned to the model as an
+    // error before any sync function or background job is started. Kept last so
+    // existing aggregate tool declarations remain source-compatible.
+    std::function<std::string(const nlohmann::json& args)> validate;
 };
 
 class Registry {

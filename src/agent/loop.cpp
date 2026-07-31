@@ -8,6 +8,7 @@
 #include <sstream>
 #include <exception>
 #include <cctype>
+#include <utility>
 
 using nlohmann::json;
 
@@ -58,42 +59,18 @@ void AgentLoop::send_for(const std::string& session_id, const char* type, json j
 }
 
 
-namespace {
-// A "reply" that only announces intent to act, then stops - "Let me generate
-// the textures first:" with nothing after it - is not an answer, it is a
-// stall. The model narrated a plan instead of making the tool call, exactly
-// what the tool-use policy in the prompt already forbids; telling it not to
-// do this in the prompt does not reliably stop it, so this is caught
-// structurally instead. Deliberately narrow: only content that both opens
-// with a forward-looking lead-in AND ends without terminal punctuation (a
-// trailing colon, dash, or ellipsis, or simply cuts off) counts, so a normal
-// answer that happens to start "Let me explain..." and then actually
-// explains is left alone.
-bool looks_like_stall(const std::string& content) {
-    std::string t = content;
-    while (!t.empty() && std::isspace(static_cast<unsigned char>(t.back()))) t.pop_back();
-    if (t.empty()) return true; // empty reply is never a real answer
-    size_t start = 0;
-    while (start < t.size() && std::isspace(static_cast<unsigned char>(t[start]))) ++start;
-    std::string head = t.substr(start, 40);
-    for (auto& c : head) c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
-    static const char* lead_ins[] = {
-        "let me", "i'll", "i will", "i'm going to", "first, i", "first i",
-        "next, i", "now i'll", "now let me", "starting with", "to start,"
-    };
-    bool has_lead_in = false;
-    for (const char* l : lead_ins) if (head.rfind(l, 0) == 0) { has_lead_in = true; break; }
-    if (!has_lead_in) return false;
-    const char last = t.back();
-    const bool ends_open = (last == ':' || last == '-' ||
-        (t.size() >= 3 && t.substr(t.size() - 3) == "..."));
-    return ends_open;
-}
-} // namespace
 
 void AgentLoop::start_next_batch(TurnOptions options) {
     if (stop_requested_.load()) { log("perpetual run stopped by user"); return; }
     options.batch_index += 1;
+    // Exact-call protection is deliberately batch-local. Persistent progress is
+    // carried by the ledger, which can advise against redundant work without
+    // making a legitimate later refresh impossible.
+    options.watchdog = std::make_shared<ProgressWatchdog>();
+    if (!options.agent_id.empty()) {
+        ledger_.seed_watchdog(options.agent_id, options.task_key, *options.watchdog,
+                              static_cast<std::size_t>(cfg_.agent_ledger_prompt_entries));
+    }
     const std::string sid = store_.create();
     // send_for is the loop's channel to the UI; emit is a Bridge-only method.
     // send_for stamps session_id, so the payload omits it.
@@ -103,10 +80,16 @@ void AgentLoop::start_next_batch(TurnOptions options) {
              " with a fresh context. Already-processed items are remembered on disk."}});
     log("perpetual run: starting batch " + std::to_string(options.batch_index + 1));
     const std::string kickoff =
-        "Begin the next batch of your task now. First read your seen-list with archive_seen so you "
-        "do not repeat earlier work, then continue. Do not reply with a plan; make your first tool "
-        "call in this response.";
-    user_turn(sid, kickoff, options);
+        "Begin the next batch of your task now. Use the injected agent work ledger and any available "
+        "archive state to continue from prior progress without resurveying completed work. Do not reply with "
+        "a plan; make your first concrete tool call in this response.";
+    // We are still inside the previous batch's engine worker, so calling
+    // user_turn here would see busy_=true and reject the new batch. Append the
+    // kickoff now and queue the continuation behind the current worker instead.
+    store_.append(sid, {Role::User, kickoff, ""});
+    send_for(sid, "turn_accepted");
+    eng_.begin_turn();
+    schedule_followup(sid, options);
 }
 
 void AgentLoop::schedule_followup(const std::string& session_id, TurnOptions options) {
@@ -143,6 +126,24 @@ int AgentLoop::generation_limit(const std::string& effort) const {
 
 void AgentLoop::user_turn(const std::string& session_id, const std::string& text, TurnOptions options) {
     if (session_id.empty() || text.empty()) return;
+    const bool fresh_watchdog = !options.watchdog;
+    if (!options.watchdog) options.watchdog = std::make_shared<ProgressWatchdog>();
+    if (options.task_key.empty() && !options.agent_id.empty()) {
+        AgentProfile agent;
+        if (workspace_.get_agent(options.agent_id, agent)) {
+            std::string identity = agent.id + "|" + agent.config_resource_id + "|" +
+                agent.site_url + "|" + agent.filesystem_root;
+            // Config-driven and crawler agents represent one stable reusable task.
+            // A generic local operator can be used for unrelated jobs, so bind its
+            // ledger slice to the initiating instruction to avoid prompt pollution.
+            if (agent.type == "local") identity += "|" + text;
+            options.task_key = stable_text_fingerprint(identity);
+        }
+    }
+    if (fresh_watchdog && !options.agent_id.empty()) {
+        ledger_.seed_watchdog(options.agent_id, options.task_key, *options.watchdog,
+                              static_cast<std::size_t>(cfg_.agent_ledger_prompt_entries));
+    }
     if (busy_.exchange(true)) {
         send_for(session_id, "turn_rejected", {{"message", "another turn is already running"}});
         return;
@@ -212,6 +213,9 @@ std::string AgentLoop::workspace_prompt(const TurnOptions& options, const std::s
         out << "\nActive agent: " << agent.name << " (" << agent.type << ").";
         resource_ids.insert(resource_ids.end(), agent.rag_ids.begin(), agent.rag_ids.end());
         if (!agent.config_resource_id.empty()) resource_ids.push_back(agent.config_resource_id);
+        if (!agent.filesystem_root.empty()) {
+            out << " File tools are confined to this agent workspace: " << agent.filesystem_root << ".";
+        }
         if (agent.type == "local") {
             out << " You may use local-computer tools when needed. Prefer inspecting before modifying "
                    "something that already exists, and report what changed. A brand-new file the user "
@@ -223,6 +227,14 @@ std::string AgentLoop::workspace_prompt(const TurnOptions& options, const std::s
             out << " Crawl only the configured site and same-origin pages unless the user explicitly expands scope.";
             if (!agent.site_url.empty()) out << " Starting site: " << agent.site_url << ".";
         }
+    }
+
+    if (!options.agent_id.empty()) {
+        const std::string work = ledger_.prompt_block(
+            options.agent_id, options.task_key,
+            static_cast<std::size_t>(cfg_.agent_ledger_prompt_bytes),
+            static_cast<std::size_t>(cfg_.agent_ledger_prompt_entries));
+        if (!work.empty()) out << "\n\n" << work;
     }
 
     std::sort(resource_ids.begin(), resource_ids.end());
@@ -237,8 +249,10 @@ std::string AgentLoop::workspace_prompt(const TurnOptions& options, const std::s
 // worker (trimmed_history is only called from run_turn), so generate_sync is
 // safe here. Returns false when compression is impossible or fails; the
 // caller then falls back to plain oldest-first trimming.
-bool AgentLoop::compress_history(const std::string& session_id, std::vector<Message>& msgs, bool harmony) {
-    const size_t keep = static_cast<size_t>(std::clamp(cfg_.compress_keep_recent, 2, 64));
+bool AgentLoop::compress_history(const std::string& session_id, std::vector<Message>& msgs,
+                                 bool harmony, int keep_recent_override) {
+    const int requested_keep = keep_recent_override >= 0 ? keep_recent_override : cfg_.compress_keep_recent;
+    const size_t keep = static_cast<size_t>(std::clamp(requested_keep, 2, 64));
     if (msgs.size() <= keep + 2) return false;
 
     // Boundary starts keep-from-the-end, then moves back so the kept tail
@@ -248,9 +262,10 @@ bool AgentLoop::compress_history(const std::string& session_id, std::vector<Mess
     while (boundary > 1 && msgs[boundary].role != Role::User) --boundary;
     if (boundary < 2) return false;
 
-    // Transcript of the messages being folded. A prior summary is included in
-    // the text so summaries chain instead of losing the oldest history. Long
-    // messages are clipped: the summary needs the shape of the conversation,
+    // Transcript of the messages being folded. A prior rolling summary is
+    // folded into its replacement, so there is always exactly one bounded
+    // summary record rather than an accumulating chain. Long messages are
+    // clipped: the summary needs the shape of the conversation,
     // not full tool payloads.
     std::string transcript;
     for (size_t i = 0; i < boundary; ++i) {
@@ -403,11 +418,19 @@ std::vector<Message> AgentLoop::trimmed_history(const std::string& session_id,
     const int compact_at = (frac > 0.0 && frac < 1.0) ? static_cast<int>(budget * frac) : budget;
     if (cfg_.enable_compression && !msgs.empty() && eng_.count_tokens_sync(build()) > compact_at) {
         compress_history(session_id, msgs, harmony);
+        // A long session loaded from disk can already be far beyond budget.
+        // If the normal rolling summary still leaves too much verbatim tail,
+        // immediately perform one aggressive bounded pass before trimming.
+        if (eng_.count_tokens_sync(build()) > budget)
+            compress_history(session_id, msgs, harmony, 2);
     }
     // Safety net: still over budget (compression disabled, failed, or the
-    // summary plus recent tail remains too large) — fall back to trimming.
-    while (msgs.size() > 1 && eng_.count_tokens_sync(build()) > budget)
-        msgs.erase(msgs.begin());
+    // summary plus recent tail remains too large) — trim old verbatim history
+    // while preserving the single rolling summary whenever possible.
+    while (msgs.size() > 1 && eng_.count_tokens_sync(build()) > budget) {
+        const std::size_t erase_at = (msgs.size() > 2 && msgs.front().tool_name == "conversation_summary") ? 1 : 0;
+        msgs.erase(msgs.begin() + static_cast<std::ptrdiff_t>(erase_at));
+    }
 
     // Trimming only removes conversation. If the prompt still will not fit with
     // a single message left, the fixed part is the problem - system prompt, tool
@@ -459,17 +482,22 @@ void AgentLoop::run_turn(const std::string& session_id, const TurnOptions& optio
                                             : docs_owned;
 
     const int token_limit = generation_limit(options.effort);
-    // No iteration cap. A run ends by task_complete, the user's Stop, an error,
-    // or context compaction failing - not by an arbitrary count. A perpetual run
-    // must not clear its cross-batch dedup, or a fresh batch resurveys the last.
-    if (!options.perpetual) run_call_signatures_.clear();
+    // No iteration cap. A run ends by task_complete, Stop, an error, or the
+    // progress watchdog proving that the model is repeating non-progressing
+    // actions. Useful long work remains uncapped.
+    const auto watchdog = options.watchdog ? options.watchdog : std::make_shared<ProgressWatchdog>();
+    std::string scoped_filesystem_root;
+    if (!options.agent_id.empty()) {
+        AgentProfile active_agent;
+        if (workspace_.get_agent(options.agent_id, active_agent))
+            scoped_filesystem_root = active_agent.filesystem_root;
+    }
     // Total token-limit truncations auto-retried in this run (not required to
     // be back-to-back). Auto-retry is meant for the ordinary "content was too
     // big for this call" case; a model that keeps overflowing no matter what
     // it is told is a different, real problem and should surface as an error
     // rather than loop forever.
     int consecutive_truncations = 0;
-    int consecutive_stalls = 0;
     for (int iter = 0; ; ++iter) {
         const auto current = store_.messages(session_id);
         std::string query;
@@ -495,6 +523,9 @@ void AgentLoop::run_turn(const std::string& session_id, const TurnOptions& optio
         send_for(session_id, "context_usage", {
             {"used", used}, {"budget", budget}, {"n_ctx", n_ctx},
             {"reserve", reserve}, {"generation", token_limit}, {"fixed", fixed}});
+        // trimmed_history already emitted the detailed diagnosis. Do not hand
+        // an oversized prompt to llama.cpp and generate a second, vaguer error.
+        if (used > budget) return;
 
         send_for(session_id, "gen_started");
         StreamFilter filter;
@@ -584,17 +615,20 @@ void AgentLoop::run_turn(const std::string& session_id, const TurnOptions& optio
             // chat included - it is not shown as the answer, because it is
             // not one. Capped so a model that truly cannot progress fails
             // loudly instead of spinning silently forever.
-            if (looks_like_stall(content) && consecutive_stalls < 8) {
-                ++consecutive_stalls;
-                log("stalling reply detected, forcing continuation: " + content.substr(0, 80));
-                store_.append(session_id, {Role::Tool,
-                    "That was a plan, not an action. Do not describe what you are about to do - "
-                    "make the tool call itself in this response, right now.",
-                    "run_controller"});
+            if (looks_like_stalling_reply(content)) {
+                const GuardDecision stall = watchdog->on_stalling_reply(content);
+                log("stalling reply detected: " + content.substr(0, 80));
+                if (stall.abort_run) {
+                    store_.append(session_id, {Role::Assistant, stall.message, ""});
+                    send_for(session_id, "error", {{"message", stall.message}});
+                    return;
+                }
+                store_.append(session_id, {Role::Tool, stall.message, "run_controller"});
                 send_for(session_id, "note", {{"text", "Model stalled on a plan instead of acting - continuing automatically."}});
                 continue;
             }
 
+            watchdog->on_reply_progress();
             store_.append(session_id, {Role::Assistant, content, ""});
             send_for(session_id, "assistant_final", {{"text", content}, {"thinking", thinking}});
 
@@ -645,19 +679,29 @@ void AgentLoop::run_turn(const std::string& session_id, const TurnOptions& optio
             continue;
         }
 
-        // One canonical repeat guard. The previous implementation registered
-        // args-only calls twice, so the first legitimate write/process call was
-        // rejected by the second check as its own duplicate.
-        if (options.autonomous) {
-            const std::string signature = canonical_tool_call_signature(name, args);
-            if (!remember_tool_call(run_call_signatures_, signature)) {
-                const std::string refusal =
-                    "error: this exact call was already made in this run and cannot return anything "
-                    "new. Treat the earlier result as authoritative and choose a different URL, "
-                    "query, path, command, or arguments instead of repeating it.";
-                log("refused repeat tool_call: " + signature);
-                store_.append(session_id, {Role::Tool, refusal, name});
-                send_for(session_id, "tool_result", {{"name", name}, {"result", refusal}});
+        // Exact-repeat and stalled-resource protection applies in Chat and Agent
+        // modes alike. It is progress-based, not a tool-call budget.
+        const GuardDecision guard = watchdog->before_call(name, args);
+        if (!guard.allow) {
+            log("progress watchdog refused tool_call: " + guard.signature);
+            store_.append(session_id, {Role::Tool, guard.message, name});
+            send_for(session_id, "tool_result", {{"name", name}, {"result", guard.message}});
+            if (guard.abort_run) {
+                send_for(session_id, "error", {{"message", guard.message}});
+                return;
+            }
+            continue;
+        }
+
+        if (tool->validate) {
+            std::string validation;
+            try { validation = tool->validate(args); }
+            catch (const std::exception& e) { validation = std::string("error: invalid tool arguments: ") + e.what(); }
+            catch (...) { validation = "error: invalid tool arguments"; }
+            if (!validation.empty()) {
+                watchdog->after_result(name, args, validation);
+                store_.append(session_id, {Role::Tool, validation, name});
+                send_for(session_id, "tool_result", {{"name", name}, {"result", validation}});
                 continue;
             }
         }
@@ -670,26 +714,44 @@ void AgentLoop::run_turn(const std::string& session_id, const TurnOptions& optio
         Message call{Role::Assistant, args.dump(), name};
         if (harmony) call.harmony_raw = r.text;
         store_.append(session_id, call);
+        json dispatch_args = args;
+        dispatch_args.erase("_helm_fs_root");
+        if (!scoped_filesystem_root.empty() &&
+            (name == "read_text_file" || name == "list_directory" || name == "write_text_file" ||
+             name == "archive_seen" || name == "describe_image" || name == "extract_document"))
+            dispatch_args["_helm_fs_root"] = scoped_filesystem_root;
+
         if (tool->cls == ToolClass::Sync) {
             std::string result;
-            try { result = tool->run_sync(args); }
+            try { result = tool->run_sync(dispatch_args); }
             catch (const std::exception& e) { result = std::string("error: ") + e.what(); }
             catch (...) { result = "error: unknown tool failure"; }
             result = clamp_tool_result(result, name);
+            const ProgressObservation observation = watchdog->after_result(name, args, result);
+            ledger_.record(options.agent_id, options.task_key, name, args, result,
+                           static_cast<std::size_t>(cfg_.agent_ledger_max_entries));
             store_.append(session_id, {Role::Tool, result, name});
             send_for(session_id, "tool_result", {{"name", name}, {"result", result}});
+            if (observation.resource_stalled) {
+                const std::string warning = "Progress watchdog: repeated attempts on this resource have produced no new information. Use the result already gathered and choose a materially different next step.";
+                store_.append(session_id, {Role::Tool, warning, "run_controller"});
+                send_for(session_id, "note", {{"text", warning}});
+            }
             continue;
         }
 
-        const int id = jobs_.start(*tool, args,
+        const int id = jobs_.start(*tool, dispatch_args,
             [this, session_id](int jid, const std::string& jname, int pct, const std::string& note) {
                 send_for(session_id, "job_update", {{"id", jid}, {"name", jname}, {"progress", pct}, {"note", note}, {"status", "running"}});
             },
-            [this, session_id, options](int jid, const std::string& jname, JobStatus status, const std::string& result) {
+            [this, session_id, options, args, watchdog](int jid, const std::string& jname, JobStatus status, const std::string& result) {
                 const char* s = status == JobStatus::Done ? "done" : status == JobStatus::Cancelled ? "cancelled" : "failed";
                 send_for(session_id, "job_update", {{"id", jid}, {"name", jname}, {"progress", 100}, {"note", result}, {"status", s}});
-                store_.append(session_id, {Role::Tool,
-                    clamp_tool_result("job " + std::to_string(jid) + " " + s + ": " + result, jname), jname});
+                const std::string recorded = clamp_tool_result("job " + std::to_string(jid) + " " + s + ": " + result, jname);
+                watchdog->after_result(jname, args, recorded);
+                ledger_.record(options.agent_id, options.task_key, jname, args, recorded,
+                               static_cast<std::size_t>(cfg_.agent_ledger_max_entries));
+                store_.append(session_id, {Role::Tool, recorded, jname});
                 schedule_followup(session_id, options);
             });
         const std::string started = "job " + std::to_string(id) + " started";

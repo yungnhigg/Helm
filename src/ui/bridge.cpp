@@ -10,6 +10,7 @@
 #include "session/memory.h"
 #include "common/util.h"
 #include "tools/external_tools.h"
+#include "tools/file_guard.h"
 #include <memory>
 #include <utility>
 #include <algorithm>
@@ -517,6 +518,15 @@ void Bridge::on_web_message(const std::wstring& raw) {
             emit({{"type", "error"}, {"message", "choose a valid model for this agent"}});
             return;
         }
+        const std::string filesystem_root = definition.value("filesystem_root", "");
+        if (!filesystem_root.empty()) {
+            const auto check = resolve_tool_file_path(filesystem_root, cfg_.write_root,
+                                                      filesystem_root, FileAccessMode::Write);
+            if (!check.ok) {
+                emit({{"type", "error"}, {"message", check.error}});
+                return;
+            }
+        }
         const AgentProfile a = workspace_.create_agent(definition);
         send_workspace();
         emit({{"type", "agent_created"}, {"id", a.id}});
@@ -610,18 +620,11 @@ void Bridge::on_web_message(const std::wstring& raw) {
         options.agent_id = agent_id;
         options.autonomous = true;
         options.perpetual = j.value("perpetual", false);
-        if (options.perpetual && agent.permissions_configured) {
-            const bool has_seen = std::find(agent.allowed_tools.begin(),
-                agent.allowed_tools.end(), std::string("archive_seen")) != agent.allowed_tools.end();
-            if (!has_seen) {
-                emit({{"type", "error"}, {"message",
-                    "This agent cannot start a Perpetual Loop: it lacks the Loop state permission "
-                    "(archive_seen). Without it, each fresh-context batch would resurvey the same "
-                    "items. Recreate the agent with Loop state enabled (the Recommended preset "
-                    "includes it)."}});
-                return;
-            }
-        }
+        // Perpetual progress no longer depends on the model voluntarily calling
+        // archive_seen. Helm's bounded per-agent work ledger is updated after
+        // every material tool result and follows the run across fresh batches.
+        // archive_seen remains available as an explicit domain list, but it is
+        // not a prerequisite for safe looping.
         loop_.clear_stop();
         const std::string kickoff = j.value("instruction", std::string(
             "Begin the task defined in your active configuration now. Do not reply with a plan or "
