@@ -259,6 +259,22 @@ void Bridge::halt_local_model(const std::string& origin) {
     emit({{"type", "halted"}, {"origin", origin}});
 }
 
+void Bridge::evict_local_model(const std::string& origin) {
+    if (model_transition_.exchange(true)) {
+        log("evict ignored: a model operation is already in progress (requested by " + origin + ")");
+        return;
+    }
+    // Stop active work first so the queued unload runs promptly: cancel ends
+    // the in-flight generation, the stop latch ends any perpetual run, and
+    // the unload then executes behind the closing turn on the engine worker.
+    // The operator asked for the VRAM back, not for an error.
+    eng_.cancel();
+    loop_.request_stop();
+    log("evict_local_model requested by " + origin);
+    emit({{"type", "note"}, {"text", "Model evicted by " + origin + " - generation cancelled and VRAM released."}});
+    eng_.unload([this] { model_transition_.store(false); send_status(); });
+}
+
 void Bridge::on_web_message(const std::wstring& raw) {
     json j;
     try { j = json::parse(wide_to_utf8(raw)); }

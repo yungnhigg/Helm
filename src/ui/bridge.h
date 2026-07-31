@@ -41,6 +41,12 @@ public:
     // the authority to trigger it may be remote.
     void halt_local_model(const std::string& origin);
 
+    // The second remote-callable verb: halt stops the work, evict also frees
+    // the VRAM. Wraps the same guards as the unload_model handler
+    // (model_transition_ latch), cancels active work first, and queues the
+    // unload behind the current turn on the engine worker.
+    void evict_local_model(const std::string& origin);
+
 private:
     void send_status();
     void send_models();

@@ -134,6 +134,7 @@ add_executable(helm WIN32
     src/session/session.cpp
     src/session/memory.cpp
     src/workspace/workspace.cpp
+    src/net/server_link.cpp
     src/workspace/tool_packs.cpp
     src/tools/tool_time.cpp
     src/tools/tool_dice.cpp

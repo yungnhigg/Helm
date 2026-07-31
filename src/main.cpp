@@ -11,6 +11,7 @@
 #include <algorithm>
 #include "workspace/workspace.h"
 #include "ui/bridge.h"
+#include "net/server_link.h"
 #include "resource.h"
 
 #include <windows.h>
@@ -34,6 +35,7 @@ struct App {
     std::unique_ptr<LocalMemoryStore> memory;
     std::unique_ptr<AgentLoop> loop;
     std::unique_ptr<Bridge> bridge;
+    std::unique_ptr<ServerLink> server_link;
 
     HWND hwnd = nullptr;
     ComPtr<ICoreWebView2Controller> controller;
@@ -77,6 +79,9 @@ bool trusted_source(ICoreWebView2WebMessageReceivedEventArgs* args) {
 
 void shutdown_runtime() noexcept {
     try {
+        // The link thread calls into bridge/loop/engine; it must be gone
+        // before any of them is torn down.
+        g.server_link.reset();
         if (g.engine) g.engine->cancel();
         g.jobs.reset();       // completion callbacks may still use loop/store/bridge/engine
         g.engine.reset();     // drain inference work while loop/store/bridge remain alive
@@ -146,6 +151,9 @@ void create_webview() {
                                 [](const std::wstring& payload) {
                                     if (g.webview) g.webview->PostWebMessageAsJson(payload.c_str());
                                 });
+                            // After the bridge: the link's commands land on
+                            // the same entry points the local buttons use.
+                            g.server_link = std::make_unique<ServerLink>(g.cfg, *g.engine, *g.loop, *g.bridge);
 
                             HRESULT nav_hr = g.webview->add_NavigationStarting(
                                 Callback<ICoreWebView2NavigationStartingEventHandler>(

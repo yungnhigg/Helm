@@ -71,6 +71,14 @@ struct Config {
     int agent_ledger_prompt_entries = 24;
     int agent_ledger_prompt_bytes = 4096;
 
+    // Server link (Phase E). Hand-edited in app.json like the process
+    // allowlist: an empty server_url disables the link entirely. The token is
+    // the bearer secret from the server's token.txt; the transport is expected
+    // to be the WireGuard tunnel, never the open internet.
+    std::string server_url;        // e.g. http://10.64.0.1:8733
+    std::string server_token;
+    std::string instance_name;     // empty = this machine's computer name
+
     bool allow_process_tools = false;
     std::vector<std::string> process_allowlist;
     std::string write_root;
