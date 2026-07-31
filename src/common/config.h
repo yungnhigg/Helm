@@ -111,6 +111,11 @@ struct Config {
     // research or coding task needs. Opt in from Settings when it is wanted.
     bool enable_desktop_tools = false;
     bool enable_archive_tools = true;
+    // OSINT pack: RDAP, DNS-over-HTTPS, Certificate Transparency, SEC EDGAR,
+    // and the two key-gated sources (HIBP, OpenCorporates). Off by default -
+    // it is nine tools, and every registered tool costs fixed prompt budget on
+    // every turn whether or not it is ever called.
+    bool enable_osint_tools = false;
 
     // Prompt envelope. "chatml" is the only format implemented; the field
     // exists so a Harmony renderer (gpt-oss) can be added as a new file rather

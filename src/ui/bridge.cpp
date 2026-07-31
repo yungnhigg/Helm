@@ -185,6 +185,7 @@ void Bridge::send_settings() {
               {"enable_voice_tools", cfg_.enable_voice_tools}, {"enable_document_tools", cfg_.enable_document_tools},
               {"enable_desktop_tools", cfg_.enable_desktop_tools}, {"enable_compression", cfg_.enable_compression},
               {"enable_archive_tools", cfg_.enable_archive_tools}, {"enable_vision_tools", cfg_.enable_vision_tools},
+              {"enable_osint_tools", cfg_.enable_osint_tools},
               {"vision_model", cfg_.vision_model}, {"vision_mmproj", cfg_.vision_mmproj},
               {"vision_cli_exe", cfg_.vision_cli_exe}
           }},
@@ -365,6 +366,7 @@ void Bridge::on_web_message(const std::wstring& raw) {
         cfg_.enable_desktop_tools = v.value("enable_desktop_tools", cfg_.enable_desktop_tools);
         cfg_.enable_compression = v.value("enable_compression", cfg_.enable_compression);
         cfg_.enable_archive_tools = v.value("enable_archive_tools", cfg_.enable_archive_tools);
+        cfg_.enable_osint_tools = v.value("enable_osint_tools", cfg_.enable_osint_tools);
         cfg_.enable_vision_tools = v.value("enable_vision_tools", cfg_.enable_vision_tools);
         cfg_.vision_model = v.value("vision_model", cfg_.vision_model);
         cfg_.vision_mmproj = v.value("vision_mmproj", cfg_.vision_mmproj);

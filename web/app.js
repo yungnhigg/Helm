@@ -1073,6 +1073,7 @@ function populateSettings() {
   $('setting-desktop-tools').checked = v.enable_desktop_tools === true;
   $('setting-compression').checked = v.enable_compression !== false;
   $('setting-archive-tools').checked = v.enable_archive_tools !== false;
+  $('setting-osint-tools').checked = v.enable_osint_tools === true;
   $('setting-vision-tools').checked = v.enable_vision_tools === true;
   setValue('setting-vision-model', v.vision_model || '');
   setValue('setting-vision-mmproj', v.vision_mmproj || '');
@@ -1244,6 +1245,7 @@ function saveSettings() {
       enable_desktop_tools: $('setting-desktop-tools').checked,
       enable_compression: $('setting-compression').checked,
       enable_archive_tools: $('setting-archive-tools').checked,
+      enable_osint_tools: $('setting-osint-tools').checked,
       enable_vision_tools: $('setting-vision-tools').checked,
       vision_model: $('setting-vision-model').value.trim(),
       vision_mmproj: $('setting-vision-mmproj').value.trim(),

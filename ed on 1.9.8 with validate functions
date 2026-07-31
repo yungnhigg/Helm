@@ -1,0 +1,8 @@
+ src/common/config.cpp        |    2 [32m+[m
+ src/common/config.h          |    5 [32m+[m
+ src/tools/external_tools.cpp |  419 [32m+++++++++++++++++[m
+ src/ui/bridge.cpp            |    2 [32m+[m
+ tools_runtime/helm_tools.py  | 1045 [32m++++++++++++++++++++++++++++++++++++++++++[m
+ web/app.js                   |    2 [32m+[m
+ web/index.html               |    1 [32m+[m
+ 7 files changed, 1476 insertions(+)

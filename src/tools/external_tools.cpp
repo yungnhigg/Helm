@@ -224,6 +224,18 @@ std::string extract_document_text(const Config& cfg, const std::string& path, si
     }
 }
 
+static std::string validate_range(const nlohmann::json& a, const char* key, long long lo, long long hi) {
+    if (!a.contains(key)) return {};
+    if (!a[key].is_number_integer())
+        return std::string("error: ") + key + " must be an integer between " +
+               std::to_string(lo) + " and " + std::to_string(hi) + " inclusive";
+    const long long v = a[key].get<long long>();
+    if (v < lo || v > hi)
+        return std::string("error: ") + key + " must be between " + std::to_string(lo) +
+               " and " + std::to_string(hi) + " inclusive; received " + std::to_string(v);
+    return {};
+}
+
 void register_external_tools(Registry& r, const Config& cfg) {
     const Config* c = &cfg;
 
@@ -538,6 +550,413 @@ void register_external_tools(Registry& r, const Config& cfg) {
             if (!c->enable_desktop_tools) return std::string("error: desktop tools are disabled in Settings");
             auto result = run_helper(*c, {L"desktop-hotkey", L"--keys", utf8_to_wide(a.at("keys").get<std::string>())}, 30, &job);
             return require_success(result, "desktop hotkey");
+        }
+    });
+
+    // ---------------------------------------------------------------------
+    // OSINT pack. Public registries and transparency logs only. RDAP has
+    // replaced port-43 WHOIS and returns structured JSON, so there is no
+    // per-TLD parser here. crt.sh is job-class because it routinely takes
+    // tens of seconds and is often overloaded.
+    // ---------------------------------------------------------------------
+
+    r.add({
+        "domain_whois",
+        "Registration record for a domain via RDAP, the structured JSON successor to WHOIS. "
+        "Returns registrar, creation/expiry/updated dates, status codes, nameservers and DNSSEC. "
+        "Registrant contact fields are usually redacted by the registry under GDPR - that is "
+        "expected, not an error. A few ccTLDs (.io and .dev among them) publish no RDAP server yet.",
+        {{"domain", ParamType::String, "Domain name, e.g. example.com"}},
+        ToolClass::Sync,
+        [c](const nlohmann::json& a) -> std::string {
+            if (!c->enable_osint_tools) return std::string("error: OSINT tools are disabled in Settings");
+            auto res = run_helper(*c, {L"rdap", L"--target",
+                utf8_to_wide(a.at("domain").get<std::string>())}, 45);
+            return require_success(res, "RDAP domain lookup");
+        },
+        {}
+    });
+
+    r.add({
+        "ip_info",
+        "Registration data for an IP address via RDAP: the allocating registry, network range, "
+        "owning organisation, country and status. This is authoritative registry data, not "
+        "city-level geolocation - no keyless source provides reliable city geo.",
+        {{"ip", ParamType::String, "IPv4 or IPv6 address"}},
+        ToolClass::Sync,
+        [c](const nlohmann::json& a) -> std::string {
+            if (!c->enable_osint_tools) return std::string("error: OSINT tools are disabled in Settings");
+            auto res = run_helper(*c, {L"rdap", L"--target",
+                utf8_to_wide(a.at("ip").get<std::string>())}, 45);
+            return require_success(res, "RDAP IP lookup");
+        },
+        {}
+    });
+
+    r.add({
+        "dns_lookup",
+        "Resolve DNS records for a domain over DNS-over-HTTPS. Use it to confirm what a host "
+        "actually points at before drawing conclusions from other sources.",
+        {{"domain", ParamType::String, "Domain name to resolve"},
+         {"record_types", ParamType::String, "Comma-separated record types, e.g. A,AAAA,MX,NS,TXT"}},
+        ToolClass::Sync,
+        [c](const nlohmann::json& a) -> std::string {
+            if (!c->enable_osint_tools) return std::string("error: OSINT tools are disabled in Settings");
+            std::string types = a.value("record_types", std::string("A"));
+            if (types.empty()) types = "A";
+            auto res = run_helper(*c, {L"dns-lookup",
+                L"--domain", utf8_to_wide(a.at("domain").get<std::string>()),
+                L"--types", utf8_to_wide(types)}, 45);
+            return require_success(res, "DNS lookup");
+        },
+        {}
+    });
+
+    r.add({
+        "edgar_company",
+        "SEC EDGAR filer profile and recent filings for a US public company. Accepts a ticker "
+        "(exact match preferred) or company name. Returns CIK, exchanges, SIC description and "
+        "a list of recent filings with direct document URLs.",
+        {{"query", ParamType::String, "Ticker symbol or company name, e.g. AAPL"},
+         {"max_results", ParamType::Integer, "How many recent filings to list, 1 to 40"}},
+        ToolClass::Sync,
+        [c](const nlohmann::json& a) -> std::string {
+            if (!c->enable_osint_tools) return std::string("error: OSINT tools are disabled in Settings");
+            const int n = std::clamp(a.value("max_results", 15), 1, 40);
+            auto res = run_helper(*c, {L"edgar-company",
+                L"--query", utf8_to_wide(a.at("query").get<std::string>()),
+                L"--max-results", std::to_wstring(n)}, 60);
+            return require_success(res, "EDGAR company lookup");
+        },
+        {},
+        [](const nlohmann::json& a) -> std::string {
+            return validate_range(a, "max_results", 1, 40);
+        }
+    });
+
+    r.add({
+        "edgar_search",
+        "Full-text search across the body of every SEC filing since 2001. Use it to find which "
+        "companies disclosed a given term, not to look up one known company.",
+        {{"query", ParamType::String, "Search phrase; quote it for an exact phrase"},
+         {"forms", ParamType::String, "Form filter such as 10-K or 8-K, or empty for all forms"},
+         {"max_results", ParamType::Integer, "How many filings to return, 1 to 30"}},
+        ToolClass::Sync,
+        [c](const nlohmann::json& a) -> std::string {
+            if (!c->enable_osint_tools) return std::string("error: OSINT tools are disabled in Settings");
+            const int n = std::clamp(a.value("max_results", 15), 1, 30);
+            auto res = run_helper(*c, {L"edgar-search",
+                L"--query", utf8_to_wide(a.at("query").get<std::string>()),
+                L"--forms", utf8_to_wide(a.value("forms", std::string(""))),
+                L"--max-results", std::to_wstring(n)}, 75);
+            return require_success(res, "EDGAR full-text search");
+        },
+        {},
+        [](const nlohmann::json& a) -> std::string {
+            return validate_range(a, "max_results", 1, 30);
+        }
+    });
+
+    r.add({
+        "breach_check",
+        "Check whether an email address appears in known data breaches (Have I Been Pwned). "
+        "Requires a paid HIBP subscription key in the HIBP_API_KEY environment variable - every "
+        "HIBP endpoint that searches by address needs one. Intended for accounts you control.",
+        {{"account", ParamType::String, "Email address to check"}},
+        ToolClass::Sync,
+        [c](const nlohmann::json& a) -> std::string {
+            if (!c->enable_osint_tools) return std::string("error: OSINT tools are disabled in Settings");
+            auto res = run_helper(*c, {L"hibp-account", L"--account",
+                utf8_to_wide(a.at("account").get<std::string>())}, 40);
+            return require_success(res, "HIBP breach check");
+        },
+        {}
+    });
+
+    r.add({
+        "company_registry_search",
+        "Search corporate registry records across jurisdictions (OpenCorporates): legal name, "
+        "company number, jurisdiction, status and incorporation date. Requires an API token in "
+        "the OPENCORPORATES_API_TOKEN environment variable.",
+        {{"query", ParamType::String, "Company name to search for"},
+         {"jurisdiction", ParamType::String, "Jurisdiction code such as gb or us_de, or empty for all"},
+         {"max_results", ParamType::Integer, "How many companies to return, 1 to 30"}},
+        ToolClass::Sync,
+        [c](const nlohmann::json& a) -> std::string {
+            if (!c->enable_osint_tools) return std::string("error: OSINT tools are disabled in Settings");
+            const int n = std::clamp(a.value("max_results", 15), 1, 30);
+            auto res = run_helper(*c, {L"opencorporates",
+                L"--query", utf8_to_wide(a.at("query").get<std::string>()),
+                L"--jurisdiction", utf8_to_wide(a.value("jurisdiction", std::string(""))),
+                L"--max-results", std::to_wstring(n)}, 45);
+            return require_success(res, "OpenCorporates search");
+        },
+        {},
+        [](const nlohmann::json& a) -> std::string {
+            return validate_range(a, "max_results", 1, 30);
+        }
+    });
+
+    r.add({
+        "cert_subdomains",
+        "Enumerate subdomains from public Certificate Transparency logs (crt.sh). CT logs record "
+        "every issued certificate, so this surfaces hosts that were never published in DNS. Slow "
+        "by nature - crt.sh commonly takes tens of seconds and is frequently overloaded.",
+        {{"domain", ParamType::String, "Root domain, e.g. example.com"},
+         {"max_results", ParamType::Integer, "How many subdomains to return, 1 to 1000"}},
+        ToolClass::Job, {},
+        [c](const nlohmann::json& a, JobHandle& job) -> std::string {
+            if (!c->enable_osint_tools) return std::string("error: OSINT tools are disabled in Settings");
+            const int n = std::clamp(a.value("max_results", 200), 1, 1000);
+            job.report(10, "querying certificate transparency logs");
+            auto res = run_helper(*c, {L"crtsh",
+                L"--domain", utf8_to_wide(a.at("domain").get<std::string>()),
+                L"--max-results", std::to_wstring(n),
+                L"--timeout", L"120"}, 150, &job);
+            job.report(100, "complete");
+            return require_success(res, "certificate transparency query");
+        },
+        [](const nlohmann::json& a) -> std::string {
+            return validate_range(a, "max_results", 1, 1000);
+        }
+    });
+
+    r.add({
+        "domain_recon",
+        "Full passive reconnaissance on one domain: RDAP registration record, DNS records, and "
+        "Certificate Transparency subdomains, in one job. Passive only - it reads public "
+        "registries and logs and never contacts the target's own hosts.",
+        {{"domain", ParamType::String, "Root domain, e.g. example.com"},
+         {"max_subdomains", ParamType::Integer, "Cap on subdomains reported, 1 to 500"}},
+        ToolClass::Job, {},
+        [c](const nlohmann::json& a, JobHandle& job) -> std::string {
+            if (!c->enable_osint_tools) return std::string("error: OSINT tools are disabled in Settings");
+            const std::string domain = a.at("domain").get<std::string>();
+            const std::wstring wdomain = utf8_to_wide(domain);
+            const int n = std::clamp(a.value("max_subdomains", 100), 1, 500);
+            std::string report = "=== domain_recon: " + domain + " ===\n";
+
+            job.report(10, "RDAP registration record");
+            if (job.cancelled()) return report + "cancelled";
+            auto rdap = run_helper(*c, {L"rdap", L"--target", wdomain}, 45, &job);
+            report += "\n--- registration (RDAP) ---\n" + require_success(rdap, "RDAP lookup") + "\n";
+
+            job.report(40, "DNS records");
+            if (job.cancelled()) return report + "cancelled";
+            auto dns = run_helper(*c, {L"dns-lookup", L"--domain", wdomain,
+                L"--types", L"A,AAAA,MX,NS,TXT,CNAME"}, 45, &job);
+            report += "\n--- DNS ---\n" + require_success(dns, "DNS lookup") + "\n";
+
+            job.report(65, "certificate transparency subdomains");
+            if (job.cancelled()) return report + "cancelled";
+            auto ct = run_helper(*c, {L"crtsh", L"--domain", wdomain,
+                L"--max-results", std::to_wstring(n), L"--timeout", L"120"}, 150, &job);
+            report += "\n--- subdomains (certificate transparency) ---\n"
+                   + require_success(ct, "certificate transparency query") + "\n";
+
+            job.report(100, "complete");
+            return report;
+        },
+        [](const nlohmann::json& a) -> std::string {
+            return validate_range(a, "max_subdomains", 1, 500);
+        }
+    });
+
+    // ---------------------------------------------------------------------
+    // Free-source tools. No API key required by any of these.
+    // ---------------------------------------------------------------------
+
+    r.add({
+        "phone_lookup",
+        "Identify an unknown US or Canadian phone number: the carrier that was assigned the "
+        "number block, rate center, LATA, switch, and the rate centre coordinates. A "
+        "wholesale VoIP carrier on an unfamiliar inbound call is the strongest available spam "
+        "signal. Does NOT return a subscriber name - no free source provides one. Pair it with "
+        "search_web on the formatted number, which finds business listings and complaint reports.",
+        {{"number", ParamType::String, "US or Canada phone number in any format"}},
+        ToolClass::Sync,
+        [c](const nlohmann::json& a) -> std::string {
+            if (!c->enable_osint_tools) return std::string("error: OSINT tools are disabled in Settings");
+            auto res = run_helper(*c, {L"phone-lookup", L"--number",
+                utf8_to_wide(a.at("number").get<std::string>())}, 45);
+            return require_success(res, "phone lookup");
+        },
+        {}
+    });
+
+    r.add({
+        "geocode_address",
+        "Convert a US street address to latitude and longitude using the Census Bureau "
+        "geocoder. Free and unlimited. Use it before parcel_lookup when you only have an "
+        "address, or any time coordinates are needed.",
+        {{"address", ParamType::String, "Full US street address including city and state"}},
+        ToolClass::Sync,
+        [c](const nlohmann::json& a) -> std::string {
+            if (!c->enable_osint_tools) return std::string("error: OSINT tools are disabled in Settings");
+            auto res = run_helper(*c, {L"geocode", L"--address",
+                utf8_to_wide(a.at("address").get<std::string>())}, 45);
+            return require_success(res, "geocode");
+        },
+        {}
+    });
+
+    r.add({
+        "parcel_lookup",
+        "Find the property owner of record by street address or by latitude/longitude, using "
+        "county assessor data published by state GIS agencies. Coverage comes from a local "
+        "reference database of parcel services; if a state is not registered the error names "
+        "the ones that are. Pass an address OR coordinates - with coordinates you must also "
+        "give the two-letter state, since there is no address to derive it from.",
+        {{"address", ParamType::String, "Street address, or empty string if using coordinates"},
+         {"state", ParamType::String, "Two-letter state code, required with coordinates, otherwise empty"},
+         {"latitude", ParamType::Number, "Latitude, or 0 if using an address"},
+         {"longitude", ParamType::Number, "Longitude, or 0 if using an address"}},
+        ToolClass::Sync,
+        [c](const nlohmann::json& a) -> std::string {
+            if (!c->enable_osint_tools) return std::string("error: OSINT tools are disabled in Settings");
+            const std::string addr = a.value("address", std::string(""));
+            const std::string state = a.value("state", std::string(""));
+            const double lat = a.value("latitude", 0.0);
+            const double lon = a.value("longitude", 0.0);
+            std::vector<std::wstring> args{L"parcel-lookup"};
+            if (!addr.empty()) {
+                args.push_back(L"--address");
+                args.push_back(utf8_to_wide(addr));
+            } else if (lat != 0.0 && lon != 0.0) {
+                args.push_back(L"--latitude");
+                args.push_back(utf8_to_wide(std::to_string(lat)));
+                args.push_back(L"--longitude");
+                args.push_back(utf8_to_wide(std::to_string(lon)));
+            } else {
+                return std::string("error: supply either an address or a latitude/longitude pair");
+            }
+            if (!state.empty()) {
+                args.push_back(L"--state");
+                args.push_back(utf8_to_wide(state));
+            }
+            auto res = run_helper(*c, args, 60);
+            return require_success(res, "parcel lookup");
+        },
+        {},
+        [](const nlohmann::json& a) -> std::string {
+            const bool has_addr = !a.value("address", std::string()).empty();
+            const double lat = a.value("latitude", 0.0);
+            const double lon = a.value("longitude", 0.0);
+            const bool has_coords = lat != 0.0 && lon != 0.0;
+            if (!has_addr && !has_coords)
+                return std::string("error: supply either address, or both latitude and longitude");
+            if (has_addr && has_coords)
+                return std::string("error: supply address OR coordinates, not both");
+            if (has_coords && a.value("state", std::string()).empty())
+                return std::string("error: state is required when querying by coordinates");
+            if (has_coords && (lat < -90.0 || lat > 90.0 || lon < -180.0 || lon > 180.0))
+                return std::string("error: latitude must be -90..90 and longitude -180..180");
+            return {};
+        }
+    });
+
+    r.add({
+        "broker_registry",
+        "Search the California data broker registry: every company that collects and sells "
+        "personal data must register annually and disclose what categories it collects and how "
+        "to opt out. This is the authoritative public list of who holds consumer data. Useful "
+        "from any state, since the brokers operate nationally. Search by company name, or by a "
+        "data category such as 'geolocation' or 'reproductive' to find who claims to collect it. "
+        "Empty query returns the head of the full list.",
+        {{"query", ParamType::String, "Company name or data category, or empty for the full list"},
+         {"max_results", ParamType::Integer, "How many brokers to return, 1 to 50"}},
+        ToolClass::Job, {},
+        [c](const nlohmann::json& a, JobHandle& job) -> std::string {
+            if (!c->enable_osint_tools) return std::string("error: OSINT tools are disabled in Settings");
+            const int n = std::clamp(a.value("max_results", 20), 1, 50);
+            job.report(15, "downloading California data broker registry");
+            auto res = run_helper(*c, {L"broker-registry",
+                L"--query", utf8_to_wide(a.value("query", std::string(""))),
+                L"--max-results", std::to_wstring(n)}, 120, &job);
+            job.report(100, "complete");
+            return require_success(res, "broker registry search");
+        },
+        [](const nlohmann::json& a) -> std::string {
+            return validate_range(a, "max_results", 1, 50);
+        }
+    });
+
+    r.add({
+        "parcel_source_discover",
+        "Find and verify a public parcel service for a US state, then register it so "
+        "parcel_lookup can use it. Searches the public ArcGIS Online item index, walks each "
+        "candidate service's layers, and keeps only polygon layers that expose owner and "
+        "parcel-id fields AND answer a live anonymous query with a plausible feature count. "
+        "Run with commit=false first to inspect what it found; commit=true registers the "
+        "strongest candidate. Use this whenever parcel_lookup reports a state is unregistered.",
+        {{"state", ParamType::String, "Two-letter continental US state code, e.g. MT"},
+         {"commit", ParamType::Boolean, "true to register the best verified layer, false to only report"}},
+        ToolClass::Job, {},
+        [c](const nlohmann::json& a, JobHandle& job) -> std::string {
+            if (!c->enable_osint_tools) return std::string("error: OSINT tools are disabled in Settings");
+            std::vector<std::wstring> args{L"parcel-discover", L"--state",
+                utf8_to_wide(a.at("state").get<std::string>())};
+            if (a.value("commit", false)) args.push_back(L"--commit");
+            job.report(10, "searching ArcGIS Online for candidate parcel services");
+            auto res = run_helper(*c, args, 300, &job);
+            job.report(100, "complete");
+            return require_success(res, "parcel source discovery");
+        },
+        [](const nlohmann::json& a) -> std::string {
+            const std::string s = a.value("state", std::string());
+            if (s.size() != 2)
+                return std::string("error: state must be a two-letter code, e.g. MT");
+            return {};
+        }
+    });
+
+    r.add({
+        "parcel_sources",
+        "List the parcel services currently registered in the local reference database, which "
+        "states are covered, and which are still missing. Check this before assuming "
+        "parcel_lookup can answer for a given state.",
+        {},
+        ToolClass::Sync,
+        [c](const nlohmann::json&) -> std::string {
+            if (!c->enable_osint_tools) return std::string("error: OSINT tools are disabled in Settings");
+            auto res = run_helper(*c, {L"parcel-sources"}, 30);
+            return require_success(res, "parcel source list");
+        },
+        {}
+    });
+
+    r.add({
+        "entity_search",
+        "Look up a business entity in a state business registry: legal name, status, entity "
+        "type, filing number, and registered agent with address. Use it when a property's "
+        "owner of record is an LLC, trust, or partnership rather than a person - farm and "
+        "rental property is usually held this way. Search by entity name, or by registered "
+        "agent name to find every entity that agent represents. Defaults to Arkansas.",
+        {{"name", ParamType::String, "Entity name to search for, or empty if searching by agent"},
+         {"agent", ParamType::String, "Registered agent name, or empty if searching by entity name"},
+         {"state", ParamType::String, "Two-letter state code; empty defaults to AR"},
+         {"max_results", ParamType::Integer, "How many entities to return, 1 to 30"}},
+        ToolClass::Sync,
+        [c](const nlohmann::json& a) -> std::string {
+            if (!c->enable_osint_tools) return std::string("error: OSINT tools are disabled in Settings");
+            const int n = std::clamp(a.value("max_results", 15), 1, 30);
+            std::string state = a.value("state", std::string(""));
+            if (state.empty()) state = "AR";
+            auto res = run_helper(*c, {L"entity-search",
+                L"--name", utf8_to_wide(a.value("name", std::string(""))),
+                L"--agent", utf8_to_wide(a.value("agent", std::string(""))),
+                L"--state", utf8_to_wide(state),
+                L"--max-results", std::to_wstring(n)}, 60);
+            return require_success(res, "entity search");
+        },
+        {},
+        [](const nlohmann::json& a) -> std::string {
+            if (auto e = validate_range(a, "max_results", 1, 30); !e.empty()) return e;
+            const bool has_name = !a.value("name", std::string()).empty();
+            const bool has_agent = !a.value("agent", std::string()).empty();
+            if (!has_name && !has_agent)
+                return std::string("error: supply either name or agent; both were empty");
+            return {};
         }
     });
 }
