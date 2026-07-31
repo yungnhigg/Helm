@@ -22,6 +22,15 @@ namespace {
 // generation, or overloaded crt.sh falls back to the async path.
 constexpr int kInlineJobWaitSeconds = 20;
 
+// Web-retrieval tools that count against an interactive turn's research
+// budget. The watchdog only stops NON-progress; every novel URL is progress,
+// so nothing else bounds how many sources a model walks while a human waits
+// on a simple question. Autonomous runs are exempt - deep rips stay uncapped.
+bool is_research_tool(const std::string& name) {
+    return name == "search_web" || name == "fetch_web_page" || name == "crawl_site" ||
+           name == "github_search" || name == "search_archive";
+}
+
 struct BusyReset {
     AgentLoop& loop;
     std::atomic<bool>& busy;
@@ -587,6 +596,13 @@ void AgentLoop::run_turn(const std::string& session_id, const TurnOptions& optio
     // that repeats AGAIN is not going to recover on a third generation - it
     // only costs time and reaches the same abort. Two in a row wraps up.
     int consecutive_guard_refusals = 0;
+    // Interactive research budget. A human is waiting on this turn; search_web
+    // already returns the readable text of the top pages, so a handful of
+    // lookups covers any reasonable chat question. The effort picker scales it.
+    const bool interactive = !options.autonomous;
+    const int research_budget = options.effort == "low" ? 3
+                              : options.effort == "high" ? 8 : 5;
+    int research_calls = 0;
     for (int iter = 0; ; ++iter) {
         const auto current = store_.messages(session_id);
         std::string query;
@@ -797,6 +813,22 @@ void AgentLoop::run_turn(const std::string& session_id, const TurnOptions& optio
                 store_.append(session_id, {Role::Tool, validation, name});
                 send_for(session_id, "tool_result", {{"name", name}, {"result", validation}});
                 continue;
+            }
+        }
+
+        if (interactive && is_research_tool(name)) {
+            if (research_calls >= research_budget) {
+                finish_with_wrapup(session_id, options, docs, token_limit, harmony,
+                    "Research budget reached: " + std::to_string(research_budget) +
+                    " web lookups at effort '" + options.effort + "' for an interactive question.");
+                return;
+            }
+            ++research_calls;
+            if (research_calls == research_budget) {
+                store_.append(session_id, {Role::Tool,
+                    "Research budget notice: this is the last web lookup available for this "
+                    "question. When its result arrives, answer from the material gathered.",
+                    "run_controller"});
             }
         }
 
