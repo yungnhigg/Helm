@@ -91,7 +91,7 @@ window.HelmAgentUI = (() => {
         click: () => post({ type: 'run_agent', id: agent.id, effort: effort() })
       });
       const loop = actionButton({
-        className: 'toggle agent-action agent-action-loop', icon: '∞', label: 'Loop',
+        className: 'primary agent-action agent-action-loop', icon: '∞', label: 'Loop',
         title: 'Run fresh-context batches until Stop loop is pressed',
         click: event => {
           for (const item of document.querySelectorAll('.agent-action-loop')) item.setAttribute('aria-pressed', 'false');

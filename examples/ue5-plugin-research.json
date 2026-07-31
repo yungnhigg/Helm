@@ -1,0 +1,29 @@
+{
+  "name": "UE5 plugin research",
+  "objective": "Build a durable local reference on Unreal Engine 5 plugins for a topic supplied at run time. For every plugin worth keeping, record what it does, how it is actually used (methods, entry points, module wiring), and real code snippets copied verbatim from the repository. Correctness of URLs and code matters more than volume: a short file of verified entries beats a long file of plausible ones.",
+  "steps": [
+    "Restate the requested topic in one line, then list the 3-5 search phrasings you will use. Include at least one with 'language:C++' and one naming the plugin category (e.g. 'gameplay ability', 'editor utility', 'runtime module').",
+    "Call github_search for each phrasing separately, never combined. Use sort=stars for the first pass and sort=updated for a second pass so you surface both established and maintained plugins.",
+    "Build the candidate list ONLY from github_search results. Copy the url field exactly as returned. Never construct, complete, or recall a github.com URL from memory - if a repository is not in a tool result, it does not exist for this task.",
+    "Drop candidates that are archived, have no license, or have not been pushed to in over 24 months, unless nothing else matches. Record the reason for each rejection in one short line.",
+    "For each surviving candidate, fetch the README and any docs page. Extract: the module name, the .uplugin/Build.cs wiring needed to depend on it, the primary public classes and their key methods, and the minimum steps to get it running in a project.",
+    "Copy 1-3 real code snippets per plugin directly from the repository. Prefer a registration/initialization snippet and one representative call site. Fence each snippet and label it with the file it came from. Do not paraphrase code and do not invent an example - if no usable snippet is visible, write 'no snippet available in fetched sources' instead.",
+    "Write results in batches of THREE plugins per file using write_text_file with overwrite=true. Name files ue5-<topic-slug>-batch-01.md, -02, and so on. Never append to a previous batch file and never attempt to write all plugins in one call.",
+    "After the final batch, write ue5-<topic-slug>-index.md listing every plugin with its verified URL, stars, license, last-push date, one-line purpose, and the batch file it is documented in.",
+    "Close with a short summary naming which plugins you would actually use and why, plus any gap the search did not cover."
+  ],
+  "constraints": {
+    "modify_files": true,
+    "maximum_iterations": 24,
+    "batch_size": 3,
+    "prefer_sync_tools": true,
+    "verified_urls_only": true,
+    "notes": [
+      "github_search is a Sync tool that returns verified name/url/stars/license/pushed_at/language/archived straight from the GitHub API. It is the only acceptable source of repository URLs.",
+      "search_web and fetch_web_page are job-class: they return 'job started' and the result arrives a turn later. That desyncs the loop. Use github_search for discovery and reach for the job tools only when a specific README needs fetching.",
+      "write_text_file REPLACES the target file. One file per batch with overwrite=true is the pattern that survives this. (Newer builds add an append parameter; append and overwrite are mutually exclusive and will be rejected if both are set.)",
+      "Ten formatted entries with code blocks overflow a 2048-token generation and the write silently truncates. Three per batch at high effort (4096) is the tested limit.",
+      "If a tool call fails, change the call before retrying. Re-issuing an identical failing call burns the iteration budget and triggers the repeat-call breaker."
+    ]
+  }
+}
