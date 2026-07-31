@@ -356,6 +356,16 @@ void register_external_tools(Registry& r, const Config& cfg) {
             auto result = run_helper(*c, {L"web-fetch", L"--url", utf8_to_wide(a.at("url").get<std::string>()),
                                           L"--max-chars", std::to_wstring(limit)}, 75, &job);
             return require_success(result, "web page fetch");
+        },
+        [](const nlohmann::json& a) -> std::string {
+            // Observed live: the model spilled the next argument into the URL
+            // field ({"url":",15000"}) and a fetch process was spawned for it.
+            // Reject anything that is not an absolute http(s) URL before a
+            // process starts.
+            const std::string url = a.value("url", std::string());
+            if (url.rfind("http://", 0) != 0 && url.rfind("https://", 0) != 0)
+                return "error: url must be an absolute http:// or https:// URL; received '" + url + "'";
+            return {};
         }
     });
 
