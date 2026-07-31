@@ -66,7 +66,11 @@ private:
         bool has_result = false;
         bool last_failed = false;
         int failure_retries = 0;
+        // One-shot replay: a duplicate of a call that succeeded hands the
+        // cached result back once instead of an opaque refusal.
+        bool replayed = false;
         std::size_t completion_epoch = 0;
+        std::string last_result;
     };
     struct ResourceState {
         std::string last_fingerprint;

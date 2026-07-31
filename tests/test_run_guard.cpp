@@ -112,6 +112,21 @@ int main() {
     plans.on_stalling_reply("I'll do that:");
     expect("fourth plan-only reply stops", plans.on_stalling_reply("I will start:").abort_run);
 
+    ProgressWatchdog replay;
+    json replay_args{{"query", "replay topic"}, {"max_results", 5}};
+    expect("replay first call accepted", replay.before_call("search_web", replay_args).allow);
+    replay.after_result("search_web", replay_args, "cached data payload");
+    auto replayed = replay.before_call("search_web", replay_args);
+    expect("successful duplicate refused with cached result replayed",
+           !replayed.allow && !replayed.abort_run &&
+           replayed.message.find("cached data payload") != std::string::npos);
+    auto replay_second = replay.before_call("search_web", replay_args);
+    expect("cached result replays only once",
+           !replay_second.allow && !replay_second.abort_run &&
+           replay_second.message.find("cached data payload") == std::string::npos);
+    expect("replay still counts on the abort ladder",
+           replay.before_call("search_web", replay_args).abort_run);
+
     expect("fingerprint stable", stable_text_fingerprint("abc") == stable_text_fingerprint("abc"));
     expect("fingerprint changes", stable_text_fingerprint("abc") != stable_text_fingerprint("abd"));
 

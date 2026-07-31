@@ -281,10 +281,25 @@ GuardDecision ProgressWatchdog::before_call(const std::string& name,
                 seen->second.has_result = false;
                 seen->second.last_failed = false;
                 seen->second.failure_retries = 0;
+                seen->second.replayed = false;
                 last_block_key_.clear();
                 repeated_blocks_ = 0;
                 consecutive_stalling_replies_ = 0;
                 return {true, false, {}, signature, resource};
+            }
+            // A repeat of a call that SUCCEEDED is usually confusion, not a
+            // loop: the model decided without the result in view (a job result
+            // landing between turns, a trimmed transcript). Hand the data back
+            // once instead of a bare refusal - but keep it on the escalation
+            // ladder via blocked_locked so a genuine repeat spiral still
+            // aborts after three strikes.
+            if (seen->second.has_result && !seen->second.last_failed &&
+                !seen->second.replayed && !seen->second.last_result.empty()) {
+                seen->second.replayed = true;
+                return blocked_locked("duplicate:" + signature,
+                    "This exact tool call already ran. Its result is repeated below one time - use "
+                    "it instead of calling again.\n\n" + seen->second.last_result,
+                    signature, resource);
             }
             return blocked_locked("duplicate:" + signature,
                 "error: this exact tool call already ran and no material progress has occurred since. Use the earlier result, take a different action first, or change the resource or arguments materially.",
@@ -357,6 +372,11 @@ ProgressObservation ProgressWatchdog::after_result(const std::string& name,
         seen->second.last_failed = failed;
         if (!failed) seen->second.failure_retries = 0;
         seen->second.completion_epoch = progress_epoch_;
+        seen->second.replayed = false;
+        // Capped copy for the one-shot replay; the full result already lives
+        // in the transcript.
+        seen->second.last_result = result.size() > 4000
+            ? result.substr(0, 4000) + " …[clipped]" : result;
     }
     return observation;
 }
