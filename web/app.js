@@ -402,6 +402,7 @@ function setMode(mode) {
   state.mode = mode;
   for (const button of document.querySelectorAll('.mode-switch .mode'))
     button.classList.toggle('active', button.dataset.mode === mode);
+  $('halt-api').hidden = mode !== 'api';
   renderSessions();
   if (mode === 'agora') showAgoraView();
   else if (mode === 'agent' && !state.activeAgent) showAgentDashboard();
@@ -1430,6 +1431,7 @@ $('mic').onclick = toggleMicrophone;
 $('jump-bottom').onclick = () => { state.followOutput = true; scrollTranscript(true); };
 $('add-model').onclick = () => post({ type: 'add_model' });
 $('unload-model').onclick = () => post({ type: 'unload_model' });
+$('halt-api').onclick = () => post({ type: 'halt_api' });
 $('open-settings').onclick = openSettings;
 $('close-settings').onclick = closeSettings;
 $('cancel-settings').onclick = closeSettings;

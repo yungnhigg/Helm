@@ -445,6 +445,12 @@ void Bridge::on_web_message(const std::wstring& raw) {
     }
     if (type == "cancel") { eng_.cancel(); return; }
     if (type == "halt_model") { halt_local_model("ui"); return; }
+    if (type == "halt_api") {
+        // Stub until the API backend lands: there is nothing in flight to
+        // abort yet. The control exists now so the mode surface is complete.
+        emit({{"type", "note"}, {"text", "No API requests are in flight - the API backend is not configured yet."}});
+        return;
+    }
     if (type == "job_cancel") { loop_.cancel_job(j.value("id", 0)); return; }
 
     if (type == "load_model") {
