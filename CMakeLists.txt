@@ -93,6 +93,27 @@ if(NOT EXISTS "${WEBVIEW2_DIR}/build/native/include/WebView2.h")
     file(ARCHIVE_EXTRACT INPUT "${CMAKE_BINARY_DIR}/webview2.nupkg" DESTINATION "${WEBVIEW2_DIR}")
 endif()
 
+# ---------------------------------------------------------------- SQLite (amalgamation, downloaded at configure time)
+# Server-side state only. The amalgamation is one .c file with no build system
+# of its own, so it is downloaded and compiled directly into helm-server rather
+# than vendored into the repo (8 MB of generated C does not belong in git).
+set(SQLITE_YEAR "2024" CACHE STRING "SQLite amalgamation release year")
+set(SQLITE_VERSION "3450100" CACHE STRING "SQLite amalgamation version")
+set(SQLITE_DIR "${CMAKE_BINARY_DIR}/sqlite")
+if(NOT EXISTS "${SQLITE_DIR}/sqlite-amalgamation-${SQLITE_VERSION}/sqlite3.c")
+    message(STATUS "Downloading SQLite ${SQLITE_VERSION} amalgamation")
+    file(DOWNLOAD
+        "https://www.sqlite.org/${SQLITE_YEAR}/sqlite-amalgamation-${SQLITE_VERSION}.zip"
+        "${CMAKE_BINARY_DIR}/sqlite-amalgamation.zip"
+        STATUS _sqlite_status)
+    list(GET _sqlite_status 0 _sqlite_code)
+    if(NOT _sqlite_code EQUAL 0)
+        message(FATAL_ERROR "SQLite amalgamation download failed: ${_sqlite_status}")
+    endif()
+    file(ARCHIVE_EXTRACT INPUT "${CMAKE_BINARY_DIR}/sqlite-amalgamation.zip" DESTINATION "${SQLITE_DIR}")
+endif()
+set(SQLITE_SRC_DIR "${SQLITE_DIR}/sqlite-amalgamation-${SQLITE_VERSION}")
+
 # ---------------------------------------------------------------- application
 add_executable(helm WIN32
     src/main.cpp
@@ -166,6 +187,35 @@ add_custom_target(helm_assets ALL
 )
 add_dependencies(helm_assets helm)
 
+# ---------------------------------------------------------------- helm-server
+# The registry and authority half of the multi-instance design: a console
+# binary, deliberately separate from the WIN32 app. It links no llama, no
+# WebView2, and no Helm sources - the only shared surface is the wire protocol.
+add_executable(helm_server
+    server/main.cpp
+    server/db.cpp
+    "${SQLITE_SRC_DIR}/sqlite3.c"
+)
+target_compile_features(helm_server PRIVATE cxx_std_20)
+if(MSVC)
+    target_compile_options(helm_server PRIVATE /utf-8)
+    # The amalgamation is third-party C: its own warnings are not actionable
+    # here, and treating them as ours buries real diagnostics.
+    set_source_files_properties("${SQLITE_SRC_DIR}/sqlite3.c" PROPERTIES COMPILE_OPTIONS "/w")
+endif()
+target_include_directories(helm_server PRIVATE server third_party "${SQLITE_SRC_DIR}")
+# Trim the amalgamation to what the server uses. Fewer features compiled in is
+# less attack surface on a network-reachable process.
+target_compile_definitions(helm_server PRIVATE
+    SQLITE_THREADSAFE=1
+    SQLITE_DQS=0
+    SQLITE_OMIT_LOAD_EXTENSION
+    SQLITE_OMIT_DEPRECATED
+    SQLITE_DEFAULT_FOREIGN_KEYS=1
+)
+target_link_libraries(helm_server PRIVATE ws2_32 crypt32 bcrypt)
+set_target_properties(helm_server PROPERTIES OUTPUT_NAME "helm-server")
+
 include(CTest)
 if(BUILD_TESTING)
     add_executable(helm_grammar_tests
@@ -223,6 +273,22 @@ if(BUILD_TESTING)
     target_include_directories(helm_file_guard_tests PRIVATE src third_party)
     target_link_libraries(helm_file_guard_tests PRIVATE shell32 ole32)
     add_test(NAME helm_file_guard_tests COMMAND helm_file_guard_tests)
+
+    add_executable(helm_server_db_tests
+        tests/test_server_db.cpp
+        server/db.cpp
+        "${SQLITE_SRC_DIR}/sqlite3.c"
+    )
+    target_compile_features(helm_server_db_tests PRIVATE cxx_std_20)
+    if(MSVC)
+        target_compile_options(helm_server_db_tests PRIVATE /utf-8)
+        set_source_files_properties("${SQLITE_SRC_DIR}/sqlite3.c" PROPERTIES COMPILE_OPTIONS "/w")
+    endif()
+    target_include_directories(helm_server_db_tests PRIVATE server third_party "${SQLITE_SRC_DIR}")
+    target_compile_definitions(helm_server_db_tests PRIVATE
+        SQLITE_THREADSAFE=1 SQLITE_DQS=0 SQLITE_OMIT_LOAD_EXTENSION
+        SQLITE_OMIT_DEPRECATED SQLITE_DEFAULT_FOREIGN_KEYS=1)
+    add_test(NAME helm_server_db_tests COMMAND helm_server_db_tests)
 
     add_executable(helm_process_guard_tests
         tests/test_process_guard.cpp
