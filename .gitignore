@@ -1,3 +1,4 @@
 build/
 dist/
 packaging/staging/
+.claude/settings.local.json

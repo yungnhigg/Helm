@@ -5,6 +5,8 @@
 #include "agent/harmony.h"
 #include "common/util.h"
 #include <algorithm>
+#include <chrono>
+#include <condition_variable>
 #include <sstream>
 #include <exception>
 #include <cctype>
@@ -15,6 +17,11 @@ using nlohmann::json;
 namespace lar {
 
 namespace {
+// How long a dispatched job is awaited inline before the turn hands off to
+// the completion follow-up. Covers the typical search/fetch; a crawl, image
+// generation, or overloaded crt.sh falls back to the async path.
+constexpr int kInlineJobWaitSeconds = 20;
+
 struct BusyReset {
     std::atomic<bool>& busy;
     const AgentEvents& events;
@@ -740,23 +747,56 @@ void AgentLoop::run_turn(const std::string& session_id, const TurnOptions& optio
             continue;
         }
 
+        // Ending the turn at dispatch made the model take its next decision
+        // holding only the string "job N started" - it fabricated a "technical
+        // issue" answer or re-issued the call until the watchdog aborted the
+        // run. Most search/fetch jobs finish in seconds, so wait a bounded
+        // window inline: the common case continues this same turn with the
+        // real result, and only a genuinely long job falls back to the
+        // follow-up path.
+        struct InlineJobWait {
+            std::mutex m;
+            std::condition_variable cv;
+            bool done = false;
+            bool waiting = true;
+        };
+        auto wait_state = std::make_shared<InlineJobWait>();
+
         const int id = jobs_.start(*tool, dispatch_args,
             [this, session_id](int jid, const std::string& jname, int pct, const std::string& note) {
                 send_for(session_id, "job_update", {{"id", jid}, {"name", jname}, {"progress", pct}, {"note", note}, {"status", "running"}});
             },
-            [this, session_id, options, args, watchdog](int jid, const std::string& jname, JobStatus status, const std::string& result) {
+            [this, session_id, options, args, watchdog, wait_state](int jid, const std::string& jname, JobStatus status, const std::string& result) {
                 const char* s = status == JobStatus::Done ? "done" : status == JobStatus::Cancelled ? "cancelled" : "failed";
                 send_for(session_id, "job_update", {{"id", jid}, {"name", jname}, {"progress", 100}, {"note", result}, {"status", s}});
                 const std::string recorded = clamp_tool_result("job " + std::to_string(jid) + " " + s + ": " + result, jname);
                 watchdog->after_result(jname, args, recorded);
                 ledger_.record(options.agent_id, options.task_key, jname, args, recorded,
                                static_cast<std::size_t>(cfg_.agent_ledger_max_entries));
+                // Appending under the wait lock keeps transcript order: the
+                // fallback path's "job started" record can never land after
+                // this result.
+                std::lock_guard lk(wait_state->m);
                 store_.append(session_id, {Role::Tool, recorded, jname});
-                schedule_followup(session_id, options);
+                send_for(session_id, "tool_result", {{"name", jname}, {"result", recorded}});
+                wait_state->done = true;
+                if (wait_state->waiting) wait_state->cv.notify_all();
+                else schedule_followup(session_id, options);
             });
-        const std::string started = "job " + std::to_string(id) + " started";
+
+        std::unique_lock lk(wait_state->m);
+        wait_state->cv.wait_for(lk, std::chrono::seconds(kInlineJobWaitSeconds),
+                                [&] { return wait_state->done; });
+        // Completed within the window: the result is already in the
+        // transcript, so the next iteration prompts with real data.
+        if (wait_state->done) continue;
+        wait_state->waiting = false;
+        const std::string started = "job " + std::to_string(id) +
+            " started and is still running. Its result will be added to this conversation "
+            "automatically when it completes and the run continues then. Do not repeat this call.";
         store_.append(session_id, {Role::Tool, started, name});
         send_for(session_id, "tool_result", {{"name", name}, {"result", started}});
+        lk.unlock();
         // Job completion owns the next inference step. Returning here avoids
         // racing a placeholder continuation against the real result.
         return;
