@@ -241,7 +241,7 @@ int WINAPI wWinMain(HINSTANCE inst, HINSTANCE, PWSTR, int show) {
     register_external_tools(g.registry, g.cfg);
     register_run_control(g.registry);
     if (g.cfg.enable_memory) register_tool_memory(g.registry, g.cfg, *g.memory);
-    g.workspace->register_tool_packs(g.registry);
+    g.workspace->register_tool_packs(g.registry, g.cfg);
 
     AgentEvents events;
     events.emit = [](const nlohmann::json& j) { if (g.bridge) g.bridge->emit(j); };

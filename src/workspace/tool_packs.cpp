@@ -1,7 +1,9 @@
 #include "workspace/workspace.h"
 #include "agent/registry.h"
 #include "agent/jobs.h"
+#include "common/config.h"
 #include "common/util.h"
+#include "tools/process_guard.h"
 #include <windows.h>
 #include <fstream>
 #include <vector>
@@ -158,7 +160,8 @@ static std::string run_stdio_json_tool(const std::string& executable,
     return output;
 }
 
-size_t WorkspaceStore::register_tool_packs(Registry& registry) const {
+size_t WorkspaceStore::register_tool_packs(Registry& registry, const Config& cfg) const {
+    const Config* c = &cfg;
     const auto packs = resources("tool_pack");
     size_t added = 0;
     for (const auto& pack : packs) {
@@ -189,7 +192,16 @@ size_t WorkspaceStore::register_tool_packs(Registry& registry) const {
             tool.cls = ToolClass::Job;
             const std::string tool_name = tool.name;
             const int timeout_seconds = std::clamp(item.value("timeout_seconds", pack_timeout), 1, 86400);
-            tool.run_job = [executable, process_arguments, working_directory, tool_name, timeout_seconds](const json& args, JobHandle& job) {
+            // Pack manifests declare arbitrary executables, so they answer to
+            // the same allowlist as run_process. Checked at call time (live
+            // config read), not registration, matching tool_process behavior.
+            tool.run_job = [c, executable, process_arguments, working_directory, tool_name, timeout_seconds](const json& args, JobHandle& job) {
+                const ProcessDecision decision = check_process_allowed(c->process_allowlist, executable);
+                if (!decision.allowed) {
+                    log("blocked tool-pack executable outside allowlist: " + executable);
+                    return decision.error + " Tool packs answer to the same allowlist; add \"" +
+                           executable + "\" to permit this pack.";
+                }
                 return run_stdio_json_tool(executable, process_arguments, working_directory,
                                            tool_name, args, timeout_seconds, job);
             };

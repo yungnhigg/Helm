@@ -2,6 +2,7 @@
 #include "agent/jobs.h"
 #include "common/config.h"
 #include "common/util.h"
+#include "tools/process_guard.h"
 #include <windows.h>
 #include <filesystem>
 #include <vector>
@@ -23,26 +24,6 @@ static void drain_process_pipe(HANDLE pipe, std::string& output) {
         output.append(buffer, buffer + read);
         if (output.size() > 250000) output.erase(0, output.size() - 250000);
     }
-}
-
-static std::wstring lower_w(std::wstring s) {
-    std::transform(s.begin(), s.end(), s.begin(), ::towlower);
-    return s;
-}
-
-// Empty allowlist means unrestricted. An entry matches either the full path the
-// model asked for or just the executable's filename, so "makemkvcon64.exe" is a
-// usable entry without pinning the install location.
-static bool allowed_executable(const std::vector<std::string>& allow, const std::wstring& exe) {
-    if (allow.empty()) return true;
-    const std::wstring full = lower_w(exe);
-    const std::wstring name = lower_w(std::filesystem::path(exe).filename().wstring());
-    for (const auto& entry : allow) {
-        if (entry.empty()) continue;
-        const std::wstring e = lower_w(utf8_to_wide(entry));
-        if (e == full || e == name) return true;
-    }
-    return false;
 }
 
 static std::wstring quote_arg(const std::wstring& s) {
@@ -70,6 +51,9 @@ void register_tool_process(Registry& r, const Config& cfg) {
         description += " Only these executables may be started:";
         for (const auto& entry : cfg.process_allowlist) description += " " + entry;
         description += ".";
+    } else {
+        description += " The process allowlist is currently empty, so every launch will be "
+                       "refused until process_allowlist is configured in app.json.";
     }
 
     r.add({
@@ -82,14 +66,16 @@ void register_tool_process(Registry& r, const Config& cfg) {
         ToolClass::Job,
         {},
         [c](const nlohmann::json& a, JobHandle& job) {
-            const std::wstring exe = utf8_to_wide(a.at("executable").get<std::string>());
+            const std::string exe_utf8 = a.at("executable").get<std::string>();
+            const std::wstring exe = utf8_to_wide(exe_utf8);
             const std::wstring args = utf8_to_wide(a.at("arguments").get<std::string>());
             const std::wstring cwd = utf8_to_wide(a.at("working_directory").get<std::string>());
             const int timeout = std::clamp(a.at("timeout_seconds").get<int>(), 1, 3600);
 
-            if (!allowed_executable(c->process_allowlist, exe)) {
-                log("blocked run_process outside allowlist: " + wide_to_utf8(exe));
-                return std::string("error: executable is not in process_allowlist");
+            const ProcessDecision decision = check_process_allowed(c->process_allowlist, exe_utf8);
+            if (!decision.allowed) {
+                log("blocked run_process outside allowlist: " + exe_utf8);
+                return decision.error;
             }
 
             SECURITY_ATTRIBUTES sa{sizeof(sa), nullptr, TRUE};

@@ -118,6 +118,7 @@ add_executable(helm WIN32
     src/tools/tool_dice.cpp
     src/tools/tool_demo_job.cpp
     src/tools/file_guard.cpp
+    src/tools/process_guard.cpp
     src/tools/tool_files.cpp
     src/tools/tool_process.cpp
     src/tools/tool_web_crawl.cpp
@@ -222,6 +223,17 @@ if(BUILD_TESTING)
     target_include_directories(helm_file_guard_tests PRIVATE src third_party)
     target_link_libraries(helm_file_guard_tests PRIVATE shell32 ole32)
     add_test(NAME helm_file_guard_tests COMMAND helm_file_guard_tests)
+
+    add_executable(helm_process_guard_tests
+        tests/test_process_guard.cpp
+        src/tools/process_guard.cpp
+    )
+    target_compile_features(helm_process_guard_tests PRIVATE cxx_std_20)
+    if(MSVC)
+        target_compile_options(helm_process_guard_tests PRIVATE /utf-8)
+    endif()
+    target_include_directories(helm_process_guard_tests PRIVATE src third_party)
+    add_test(NAME helm_process_guard_tests COMMAND helm_process_guard_tests)
 
     add_executable(helm_tool_validation_tests
         tests/test_tool_validation.cpp

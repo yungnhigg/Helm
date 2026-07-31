@@ -514,7 +514,7 @@ void Bridge::on_web_message(const std::wstring& raw) {
                                       {{L"JSON tool manifests", L"*.json"}, {L"All files", L"*.*"}});
         if (!paths.empty()) {
             const auto added_files = workspace_.import_files(paths, "tool_pack");
-            const size_t added_tools = workspace_.register_tool_packs(reg_);
+            const size_t added_tools = workspace_.register_tool_packs(reg_, cfg_);
             loop_.refresh_tools();
             json list = json::array();
             for (const auto& r : added_files) list.push_back({{"id", r.id}, {"name", r.name}, {"kind", r.kind}, {"size", r.size}});

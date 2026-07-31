@@ -59,7 +59,7 @@ public:
     std::string context_for(const std::vector<std::string>& ids, const std::string& query,
                             size_t max_chars = 48000) const;
     nlohmann::json snapshot() const;
-    size_t register_tool_packs(Registry& registry) const;
+    size_t register_tool_packs(Registry& registry, const Config& cfg) const;
 
 private:
     void load();
