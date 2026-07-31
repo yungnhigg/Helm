@@ -71,6 +71,13 @@ struct Config {
     int agent_ledger_prompt_entries = 24;
     int agent_ledger_prompt_bytes = 4096;
 
+    // Cloud API keys (Phase F). Held decrypted in memory for the lifetime of
+    // the process; persisted to runtime.json DPAPI-encrypted for this Windows
+    // user only. Never emitted to the web layer - the UI learns only whether
+    // a key is set.
+    std::string anthropic_api_key;
+    std::string openai_api_key;
+
     // Server link (Phase E). Hand-edited in app.json like the process
     // allowlist: an empty server_url disables the link entirely. The token is
     // the bearer secret from the server's token.txt; the transport is expected

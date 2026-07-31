@@ -134,6 +134,9 @@ add_executable(helm WIN32
     src/session/session.cpp
     src/session/memory.cpp
     src/workspace/workspace.cpp
+    src/api/anthropic_stream.cpp
+    src/api/api_client.cpp
+    src/common/dpapi.cpp
     src/net/server_link.cpp
     src/workspace/tool_packs.cpp
     src/tools/tool_time.cpp
@@ -159,7 +162,7 @@ target_include_directories(helm PRIVATE
 target_link_libraries(helm PRIVATE
     llama
     "${WEBVIEW2_DIR}/build/native/x64/WebView2LoaderStatic.lib"
-    user32 gdi32 ole32 shell32 shlwapi version winhttp winmm dwmapi
+    user32 gdi32 ole32 shell32 shlwapi version winhttp winmm dwmapi crypt32
 )
 
 # WebView2LoaderStatic needs these when building /MD
@@ -274,6 +277,17 @@ if(BUILD_TESTING)
     target_include_directories(helm_file_guard_tests PRIVATE src third_party)
     target_link_libraries(helm_file_guard_tests PRIVATE shell32 ole32)
     add_test(NAME helm_file_guard_tests COMMAND helm_file_guard_tests)
+
+    add_executable(helm_api_stream_tests
+        tests/test_api_stream.cpp
+        src/api/anthropic_stream.cpp
+    )
+    target_compile_features(helm_api_stream_tests PRIVATE cxx_std_20)
+    if(MSVC)
+        target_compile_options(helm_api_stream_tests PRIVATE /utf-8)
+    endif()
+    target_include_directories(helm_api_stream_tests PRIVATE src third_party)
+    add_test(NAME helm_api_stream_tests COMMAND helm_api_stream_tests)
 
     add_executable(helm_server_db_tests
         tests/test_server_db.cpp

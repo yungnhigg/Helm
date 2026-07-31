@@ -1,4 +1,5 @@
 #include "common/config.h"
+#include "common/dpapi.h"
 #include "common/util.h"
 #include <nlohmann/json.hpp>
 #include <fstream>
@@ -52,6 +53,13 @@ static void load_runtime_fields(const json& j, Config& c) {
     c.enable_desktop_tools = j.value("enable_desktop_tools", c.enable_desktop_tools);
     c.enable_archive_tools = j.value("enable_archive_tools", c.enable_archive_tools);
     c.enable_osint_tools = j.value("enable_osint_tools", c.enable_osint_tools);
+    // Keys are stored encrypted; a blob that fails to decrypt (copied from
+    // another user profile, corrupt) reads back as "not configured".
+    if (j.contains("anthropic_api_key_enc"))
+        c.anthropic_api_key = dpapi_unprotect_from_base64(j.value("anthropic_api_key_enc", std::string()));
+    if (j.contains("openai_api_key_enc"))
+        c.openai_api_key = dpapi_unprotect_from_base64(j.value("openai_api_key_enc", std::string()));
+
     c.enable_compression = j.value("enable_compression", c.enable_compression);
     c.compress_at_fraction = std::clamp(j.value("compress_at_fraction", c.compress_at_fraction), 0.0, 1.0);
     c.compress_keep_recent = std::clamp(j.value("compress_keep_recent", c.compress_keep_recent), 2, 64);
@@ -217,6 +225,12 @@ void Config::persist_runtime_settings() const {
         {"compress_at_fraction", compress_at_fraction},
         {"compress_keep_recent", compress_keep_recent}, {"compress_summary_tokens", compress_summary_tokens}
     };
+    // Written only when set: an absent key reads back as "not configured",
+    // and the plaintext never touches disk.
+    if (!anthropic_api_key.empty())
+        j["anthropic_api_key_enc"] = dpapi_protect_to_base64(anthropic_api_key);
+    if (!openai_api_key.empty())
+        j["openai_api_key_enc"] = dpapi_protect_to_base64(openai_api_key);
     atomic_write_text(utf8_to_wide(app_data_dir() + "runtime.json"), j.dump(1));
 }
 
