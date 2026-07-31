@@ -23,13 +23,19 @@ namespace {
 constexpr int kInlineJobWaitSeconds = 20;
 
 struct BusyReset {
+    AgentLoop& loop;
     std::atomic<bool>& busy;
     const AgentEvents& events;
     std::string session_id;
     ~BusyReset() noexcept {
         busy.store(false);
         try {
-            json j{{"session_id", session_id}, {"type", "turn_done"}};
+            // busy_ is already false here, so task_active reports what is
+            // still genuinely running: dispatched jobs and queued follow-ups.
+            // A turn that ends because it handed off to a job is not a
+            // finished task, and the UI must keep its stop control up.
+            json j{{"session_id", session_id}, {"type", "turn_done"},
+                   {"task_active", loop.has_in_flight_work()}};
             if (events.emit) events.emit(j);
         } catch (const std::exception& e) {
             log(std::string("turn cleanup notification failed: ") + e.what());
@@ -113,11 +119,15 @@ void AgentLoop::enqueue_followup(const std::string& session_id, TurnOptions opti
             enqueue_followup(session_id, std::move(options));
             return;
         }
+        // BusyReset is constructed FIRST so it destructs LAST: the pending
+        // counter must be decremented before turn_done samples
+        // has_in_flight_work(), or this follow-up would count itself and
+        // task_active could never go false.
+        BusyReset reset{*this, busy_, ev_, session_id};
         struct PendingReset {
             std::atomic<int>& pending;
             ~PendingReset() noexcept { pending.fetch_sub(1); }
         } pending_reset{pending_followups_};
-        BusyReset reset{busy_, ev_, session_id};
         try { run_turn(session_id, options); }
         catch (const std::exception& e) { send_for(session_id, "error", {{"message", e.what()}}); }
         catch (...) { send_for(session_id, "error", {{"message", "unknown job follow-up failure"}}); }
@@ -173,7 +183,7 @@ void AgentLoop::user_turn(const std::string& session_id, const std::string& text
     // wiped when it starts.
     eng_.begin_turn();
     eng_.submit([this, session_id, options = std::move(options)] {
-        BusyReset reset{busy_, ev_, session_id};
+        BusyReset reset{*this, busy_, ev_, session_id};
         try { run_turn(session_id, options); }
         catch (const std::exception& e) { send_for(session_id, "error", {{"message", e.what()}}); }
         catch (...) { send_for(session_id, "error", {{"message", "unknown agent-loop failure"}}); }

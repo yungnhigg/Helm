@@ -378,14 +378,19 @@ const handlers = {
     updateComposerState();
   },
 
-  turn_done() {
-    // Nothing can still be running once the turn is over. Any row left in the
-    // strip missed its terminal update, so clear it rather than leaving a
-    // progress bar stuck at the top of the view.
-    clearFinishedJobs();
-    state.busy = false;
-    state.busySession = '';
-      renderSessions();
+  turn_done(message) {
+    // A turn can end while its task is still running: a dispatched job owns
+    // the next inference step. Busy tracks the task, not the turn, so the
+    // stop control stays available until the work is actually finished.
+    const taskActive = !!(message && message.task_active);
+    if (!taskActive) {
+      // Any job row left in the strip missed its terminal update; clear it
+      // rather than leaving a progress bar stuck at the top of the view.
+      clearFinishedJobs();
+      state.busySession = '';
+    }
+    state.busy = taskActive;
+    renderSessions();
     state.pendingUser = null;
     updateComposerState();
     post({ type: 'refresh_sessions' });
