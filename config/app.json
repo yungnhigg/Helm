@@ -1,4 +1,4 @@
-{
+﻿{
   // Helm copies this default to %LOCALAPPDATA%\Helm\app.json on first run.
   // Add GGUF files from the UI or edit the user copy directly.
   "active_model_id": "default",
@@ -54,7 +54,7 @@
   "enable_image_tools": true,
   "enable_voice_tools": true,
   "enable_document_tools": true,
-  "enable_desktop_tools": true,
+  "enable_desktop_tools": false,
   "enable_compression": true,
   "compress_at_fraction": 0.75,
   "compress_keep_recent": 8,
