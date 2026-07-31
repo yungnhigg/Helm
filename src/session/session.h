@@ -27,6 +27,10 @@ struct SessionMeta {
     std::string id;
     std::string title;
     long long updated = 0;
+    // Which workspace surface owns this conversation: chat | agent | api | agora.
+    // Fixed at creation; the session picker filters on it. Kept LAST so the
+    // positional aggregate init in create() stays valid for older fields.
+    std::string mode = "chat";
 };
 
 class SessionStore {
@@ -35,7 +39,7 @@ public:
     ~SessionStore();
 
     std::vector<SessionMeta> list() const;
-    std::string create();
+    std::string create(const std::string& mode = "chat");
     bool select(const std::string& id);
     bool remove(const std::string& id);
 

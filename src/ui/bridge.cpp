@@ -135,7 +135,7 @@ void Bridge::send_models() {
 void Bridge::send_sessions() {
     json list = json::array();
     for (const auto& m : store_.list())
-        list.push_back({{"id", m.id}, {"title", m.title}, {"updated", m.updated}});
+        list.push_back({{"id", m.id}, {"title", m.title}, {"updated", m.updated}, {"mode", m.mode}});
     emit({{"type", "sessions"}, {"list", list}, {"active", store_.active_id()}});
 }
 
@@ -483,7 +483,14 @@ void Bridge::on_web_message(const std::wstring& raw) {
         return;
     }
 
-    if (type == "new_session") { store_.create(); send_sessions(); send_history(); return; }
+    if (type == "new_session") {
+        // The UI stamps the active workspace mode on the new conversation.
+        std::string mode = j.value("mode", "chat");
+        if (mode != "chat" && mode != "agent" && mode != "api" && mode != "agora") mode = "chat";
+        store_.create(mode);
+        send_sessions(); send_history();
+        return;
+    }
     if (type == "select_session") {
         const std::string id = j.value("id", "");
         if (store_.select(id)) { send_sessions(); send_history(id); }
@@ -620,7 +627,7 @@ void Bridge::on_web_message(const std::wstring& raw) {
             emit({{"type", "error"}, {"message", "load a model before running an agent"}});
             return;
         }
-        const std::string session_id = store_.create();
+        const std::string session_id = store_.create("agent");
         send_sessions(); send_history(session_id);
         emit({{"type", "agent_opened"}, {"agent_id", agent_id}, {"session_id", session_id}, {"autorun", true}});
 
@@ -653,7 +660,7 @@ void Bridge::on_web_message(const std::wstring& raw) {
             emit({{"type", "error"}, {"message", "agent not found"}});
             return;
         }
-        const std::string session_id = store_.create();
+        const std::string session_id = store_.create("agent");
         send_sessions(); send_history(session_id);
         emit({{"type", "agent_opened"}, {"agent_id", agent_id}, {"session_id", session_id}});
         return;

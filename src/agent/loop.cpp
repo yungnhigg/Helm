@@ -93,7 +93,7 @@ void AgentLoop::start_next_batch(TurnOptions options) {
         ledger_.seed_watchdog(options.agent_id, options.task_key, *options.watchdog,
                               static_cast<std::size_t>(cfg_.agent_ledger_prompt_entries));
     }
-    const std::string sid = store_.create();
+    const std::string sid = store_.create("agent");
     // send_for is the loop's channel to the UI; emit is a Bridge-only method.
     // send_for stamps session_id, so the payload omits it.
     send_for(sid, "agent_opened", {{"agent_id", options.agent_id},

@@ -84,6 +84,8 @@ void SessionStore::load_all() {
             data.meta.id = j.value("id", "");
             data.meta.title = j.value("title", "new conversation");
             data.meta.updated = j.value("updated", 0LL);
+            data.meta.mode = j.value("mode", "chat");
+            if (data.meta.mode.empty()) data.meta.mode = "chat";
             if (data.meta.id.empty()) continue;
             if (j.contains("messages") && j["messages"].is_array()) {
                 for (const auto& jm : j["messages"])
@@ -110,11 +112,12 @@ std::vector<SessionMeta> SessionStore::list() const {
     return out;
 }
 
-std::string SessionStore::create() {
+std::string SessionStore::create(const std::string& mode) {
     SessionData snapshot;
     {
         std::lock_guard lk(m_);
-        snapshot.meta = { new_uuid(), "new conversation", now_s() };
+        snapshot.meta = { new_uuid(), "new conversation", now_s(),
+                          mode.empty() ? "chat" : mode };
         active_ = snapshot.meta.id;
         sessions_[snapshot.meta.id] = snapshot;
     }
@@ -220,6 +223,7 @@ void SessionStore::persist_snapshot(SessionData s) const {
     j["id"] = s.meta.id;
     j["title"] = s.meta.title;
     j["updated"] = s.meta.updated;
+    j["mode"] = s.meta.mode;
     j["messages"] = json::array();
     for (const auto& m : s.messages) {
         json jm = {
