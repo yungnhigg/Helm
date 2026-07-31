@@ -582,6 +582,11 @@ void AgentLoop::run_turn(const std::string& session_id, const TurnOptions& optio
     // it is told is a different, real problem and should surface as an error
     // rather than loop forever.
     int consecutive_truncations = 0;
+    // Consecutive watchdog refusals across generations. After one refusal the
+    // model has been handed the cached result and told to move on; a model
+    // that repeats AGAIN is not going to recover on a third generation - it
+    // only costs time and reaches the same abort. Two in a row wraps up.
+    int consecutive_guard_refusals = 0;
     for (int iter = 0; ; ++iter) {
         const auto current = store_.messages(session_id);
         std::string query;
@@ -770,15 +775,17 @@ void AgentLoop::run_turn(const std::string& session_id, const TurnOptions& optio
         // failed fetch, which invites exactly the retry the guard is refusing.
         const GuardDecision guard = watchdog->before_call(name, args);
         if (!guard.allow) {
+            ++consecutive_guard_refusals;
             log("progress watchdog refused tool_call: " + guard.signature);
             store_.append(session_id, {Role::Tool, guard.message, "run_controller"});
             send_for(session_id, "tool_result", {{"name", "run_controller"}, {"result", guard.message}});
-            if (guard.abort_run) {
+            if (guard.abort_run || consecutive_guard_refusals >= 2) {
                 finish_with_wrapup(session_id, options, docs, token_limit, harmony, guard.message);
                 return;
             }
             continue;
         }
+        consecutive_guard_refusals = 0;
 
         if (tool->validate) {
             std::string validation;
