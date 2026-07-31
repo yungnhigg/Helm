@@ -42,6 +42,11 @@ public:
     std::string create(const std::string& mode = "chat");
     bool select(const std::string& id);
     bool remove(const std::string& id);
+    // Explicit titles: agent sessions carry their agent's name, and chat
+    // sessions get a model-written summary after the first exchange. A title
+    // set here wins over append()'s first-message placeholder derivation.
+    bool set_title(const std::string& id, const std::string& title);
+    std::string title(const std::string& id) const;
 
     std::string active_id() const;
     std::vector<Message> messages() const;

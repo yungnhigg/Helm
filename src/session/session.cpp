@@ -125,6 +125,27 @@ std::string SessionStore::create(const std::string& mode) {
     return snapshot.meta.id;
 }
 
+bool SessionStore::set_title(const std::string& id, const std::string& title) {
+    std::string clean = title;
+    while (!clean.empty() && (clean.front() == ' ' || clean.front() == '\n' || clean.front() == '\r')) clean.erase(0, 1);
+    while (!clean.empty() && (clean.back() == ' ' || clean.back() == '\n' || clean.back() == '\r')) clean.pop_back();
+    if (clean.empty()) return false;
+    {
+        std::lock_guard lk(m_);
+        auto it = sessions_.find(id);
+        if (it == sessions_.end()) return false;
+        it->second.meta.title = utf8_prefix(clean, 60);
+    }
+    persist_async(id);
+    return true;
+}
+
+std::string SessionStore::title(const std::string& id) const {
+    std::lock_guard lk(m_);
+    auto it = sessions_.find(id);
+    return it == sessions_.end() ? std::string() : it->second.meta.title;
+}
+
 bool SessionStore::select(const std::string& id) {
     std::lock_guard lk(m_);
     if (!sessions_.contains(id)) return false;

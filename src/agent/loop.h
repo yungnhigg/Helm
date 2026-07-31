@@ -43,6 +43,9 @@ struct TurnOptions {
     // is created for every user turn and every perpetual fresh-context batch.
     std::shared_ptr<ProgressWatchdog> watchdog;
     std::string task_key;
+    // Set by user_turn when the session had no real title yet; the first
+    // final reply then triggers a model-written 1-3 word title.
+    bool first_exchange = false;
 };
 
 class AgentLoop {
@@ -69,6 +72,9 @@ private:
     void finish_with_wrapup(const std::string& session_id, const TurnOptions& options,
                             const std::string& docs, int token_limit, bool harmony,
                             const std::string& abort_message);
+    // Replace the first-message placeholder title with a model-written
+    // 1-3 word summary after a fresh conversation's first exchange.
+    void generate_session_title(const std::string& session_id, bool harmony);
     std::vector<Message> trimmed_history(const std::string& session_id,
                                          const std::string& tool_docs,
                                          const std::string& extra_system,

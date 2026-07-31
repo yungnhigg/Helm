@@ -634,6 +634,8 @@ void Bridge::on_web_message(const std::wstring& raw) {
             return;
         }
         const std::string session_id = store_.create("agent");
+        // Agent sessions are labeled by their agent, not by the kickoff text.
+        store_.set_title(session_id, agent.name);
         send_sessions(); send_history(session_id);
         emit({{"type", "agent_opened"}, {"agent_id", agent_id}, {"session_id", session_id}, {"autorun", true}});
 
@@ -667,6 +669,7 @@ void Bridge::on_web_message(const std::wstring& raw) {
             return;
         }
         const std::string session_id = store_.create("agent");
+        store_.set_title(session_id, agent.name);
         send_sessions(); send_history(session_id);
         emit({{"type", "agent_opened"}, {"agent_id", agent_id}, {"session_id", session_id}});
         return;

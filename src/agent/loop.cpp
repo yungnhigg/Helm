@@ -94,6 +94,10 @@ void AgentLoop::start_next_batch(TurnOptions options) {
                               static_cast<std::size_t>(cfg_.agent_ledger_prompt_entries));
     }
     const std::string sid = store_.create("agent");
+    // Batch sessions read as their agent in the picker, not as the kickoff text.
+    AgentProfile batch_agent;
+    if (workspace_.get_agent(options.agent_id, batch_agent) && !batch_agent.name.empty())
+        store_.set_title(sid, batch_agent.name);
     // send_for is the loop's channel to the UI; emit is a Bridge-only method.
     // send_for stamps session_id, so the payload omits it.
     send_for(sid, "agent_opened", {{"agent_id", options.agent_id},
@@ -179,6 +183,9 @@ void AgentLoop::user_turn(const std::string& session_id, const std::string& text
         send_for(session_id, "turn_rejected", {{"message", "no model loaded — select and load a model first"}});
         return;
     }
+    // Checked before the append below derives the placeholder title from
+    // this very message; agent sessions already carry their agent's name.
+    options.first_exchange = store_.title(session_id) == "new conversation";
     if (!store_.append(session_id, {Role::User, text, ""})) {
         busy_.store(false);
         send_for(session_id, "turn_rejected", {{"message", "the selected conversation no longer exists"}});
@@ -479,6 +486,69 @@ std::vector<Message> AgentLoop::trimmed_history(const std::string& session_id,
     return msgs;
 }
 
+void AgentLoop::generate_session_title(const std::string& session_id, bool harmony) {
+    const auto msgs = store_.messages(session_id);
+    std::string user_text, reply_text;
+    for (const auto& m : msgs) {
+        if (m.role == Role::User && user_text.empty()) user_text = m.content.substr(0, 500);
+        if (m.role == Role::Assistant && m.tool_name.empty()) reply_text = m.content.substr(0, 300);
+    }
+    if (user_text.empty()) return;
+
+    const std::string instruction =
+        "Name this conversation. Reply with ONLY a title of one to three words. "
+        "No quotes, no punctuation, no explanation.";
+    std::string body = "Conversation opener: " + user_text;
+    if (!reply_text.empty()) body += "\nThe answer was about: " + reply_text;
+
+    const auto& t = cfg_.tmpl;
+    std::string prompt;
+    if (harmony) {
+        prompt = std::string("<|start|>system<|message|>Reasoning: low<|end|>") +
+                 "<|start|>developer<|message|># Instructions\n\n" +
+                 PromptBuilder::harmony_escape(instruction) + "<|end|>" +
+                 "<|start|>user<|message|>" + PromptBuilder::harmony_escape(body) + "<|end|>" +
+                 "<|start|>assistant<|channel|>final<|message|>";
+    } else {
+        prompt = t.system_prefix + instruction + t.system_suffix +
+                 t.user_prefix + body + t.user_suffix + t.assistant_prefix;
+    }
+
+    GenResult r = eng_.generate_sync(prompt, "", [](const std::string&) {}, 64);
+    if (r.reason == StopReason::Cancelled || r.reason == StopReason::Error) return;
+
+    std::string title = r.text;
+    if (harmony) {
+        const size_t marker = title.find("<|");
+        if (marker != std::string::npos) title.erase(marker);
+    }
+    // A reasoning model may think out loud despite the instruction; thinking
+    // is never title material.
+    for (size_t open = title.find("<think>"); open != std::string::npos; open = title.find("<think>")) {
+        const size_t close = title.find("</think>", open);
+        if (close == std::string::npos) { title.erase(open); break; }
+        title.erase(open, close - open + 8);
+    }
+    std::string clean;
+    clean.reserve(title.size());
+    for (char ch : title) {
+        if (ch == '"' || ch == '\'' || ch == '`') continue;
+        clean += (ch == '\n' || ch == '\r' || ch == '\t') ? ' ' : ch;
+    }
+    // Collapse runs of spaces left by the removals above.
+    std::string collapsed;
+    for (char ch : clean) {
+        if (ch == ' ' && !collapsed.empty() && collapsed.back() == ' ') continue;
+        collapsed += ch;
+    }
+    while (!collapsed.empty() && collapsed.front() == ' ') collapsed.erase(0, 1);
+    while (!collapsed.empty() && (collapsed.back() == ' ' || collapsed.back() == '.')) collapsed.pop_back();
+    if (collapsed.rfind("Title:", 0) == 0) collapsed.erase(0, 6);
+    if (collapsed.empty()) return;   // placeholder title stays
+
+    store_.set_title(session_id, utf8_prefix(collapsed, 40));
+}
+
 // Terminal wrap-up for an aborted run. The watchdog proved the model is
 // repeating non-progressing actions; killing the turn with a bare error threw
 // away everything the run had already gathered. Instead, one final generation
@@ -736,8 +806,14 @@ void AgentLoop::run_turn(const std::string& session_id, const TurnOptions& optio
             store_.append(session_id, {Role::Assistant, content, ""});
             send_for(session_id, "assistant_final", {{"text", content}, {"thinking", thinking}});
 
-            // Interactive turn: a genuine answer ends the turn here.
-            if (!options.autonomous) return;
+            // Interactive turn: a genuine answer ends the turn here. A fresh
+            // conversation first gets its placeholder title replaced with a
+            // short model-written summary - done while busy_ still holds the
+            // turn, so the sessions refresh after turn_done picks it up.
+            if (!options.autonomous) {
+                if (options.first_exchange) generate_session_title(session_id, harmony);
+                return;
+            }
 
             // Autonomous run: a genuine reply was still just progress, not
             // task_complete. Keep going.
