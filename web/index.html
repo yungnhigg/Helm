@@ -18,6 +18,8 @@
       <div class="mode-switch" role="tablist" aria-label="Workspace mode">
         <button id="mode-chat" class="mode active" data-mode="chat">Chat</button>
         <button id="mode-agent" class="mode" data-mode="agent">Agent</button>
+        <button id="mode-api" class="mode" data-mode="api">API</button>
+        <button id="mode-agora" class="mode" data-mode="agora">Agora</button>
       </div>
 
       <button id="new-chat" class="primary wide"><span class="glyph">＋</span> New chat</button>
@@ -59,6 +61,10 @@
         <div id="agent-banner" class="agent-banner" hidden>
           <div><span id="agent-type-badge" class="badge"></span><strong id="agent-banner-name"></strong></div>
           <span id="agent-banner-detail"></span>
+        </div>
+        <div id="api-banner" class="agent-banner" hidden>
+          <div><span class="badge">API</span><strong>Cloud model mode</strong></div>
+          <span>No API backend is configured yet — turns run on the local model until API keys land in Settings.</span>
         </div>
         <div id="jobs" class="jobs"></div>
         <div id="transcript" class="transcript" aria-live="polite"></div>
@@ -127,6 +133,19 @@
               <code>{ "name": "tool-pack", "adapter": "stdio-json", "executable": "...", "tools": [...] }</code>
             </details>
           </article>
+        </div>
+      </section>
+
+      <section id="agora-view" class="view">
+        <div class="hero-row">
+          <div>
+            <h2>Agora</h2>
+            <p>A shared floor where multiple agents reason together on one problem.</p>
+          </div>
+        </div>
+        <div class="agora-placeholder">
+          <p>The Agora backend is not wired up yet. This surface will host multi-agent
+          deliberation once the mode system and API backends are complete.</p>
         </div>
       </section>
     </main>

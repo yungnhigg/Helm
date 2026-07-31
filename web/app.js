@@ -395,20 +395,30 @@ const handlers = {
   }
 };
 
+const WORKSPACE_MODES = ['chat', 'agent', 'api', 'agora'];
+
 function setMode(mode) {
+  if (!WORKSPACE_MODES.includes(mode)) mode = 'chat';
   state.mode = mode;
-  $('mode-chat').classList.toggle('active', mode === 'chat');
-  $('mode-agent').classList.toggle('active', mode === 'agent');
-  if (mode === 'agent' && !state.activeAgent) showAgentDashboard();
+  for (const button of document.querySelectorAll('.mode-switch .mode'))
+    button.classList.toggle('active', button.dataset.mode === mode);
+  renderSessions();
+  if (mode === 'agora') showAgoraView();
+  else if (mode === 'agent' && !state.activeAgent) showAgentDashboard();
   else showChatView();
 }
 
 function showChatView() {
   $('chat-view').classList.add('active');
   $('agent-view').classList.remove('active');
+  $('agora-view').classList.remove('active');
   $('back-agents').hidden = !state.activeAgent;
   $('agent-banner').hidden = !state.activeAgent;
-  if (state.activeAgent) {
+  $('api-banner').hidden = state.mode !== 'api';
+  if (state.mode === 'api' && !state.activeAgent) {
+    $('page-title').textContent = 'API';
+    $('page-subtitle').textContent = 'Cloud models — backend not yet configured';
+  } else if (state.activeAgent) {
     $('page-title').textContent = state.activeAgent.name;
     $('page-subtitle').textContent = `${friendlyAgentType(state.activeAgent.type)} agent`;
     $('agent-type-badge').textContent = friendlyAgentType(state.activeAgent.type);
@@ -428,17 +438,26 @@ function showAgentDashboard() {
   state.activeAgent = null;
   syncComposerAgent();
   $('chat-view').classList.remove('active');
+  $('agora-view').classList.remove('active');
   $('agent-view').classList.add('active');
   $('back-agents').hidden = true;
   $('page-title').textContent = 'Agent workspace';
   $('page-subtitle').textContent = 'Reusable local workers and knowledge';
 }
 
+function showAgoraView() {
+  $('chat-view').classList.remove('active');
+  $('agent-view').classList.remove('active');
+  $('agora-view').classList.add('active');
+  $('back-agents').hidden = true;
+  $('page-title').textContent = 'Agora';
+  $('page-subtitle').textContent = 'Multi-agent forum — interface preview';
+}
+
 function showAgentChat() {
-  state.mode = 'agent';
-  $('mode-chat').classList.remove('active');
-  $('mode-agent').classList.add('active');
-  showChatView();
+  // agent_opened sets state.activeAgent before this runs, so setMode lands
+  // on the chat surface rather than the dashboard.
+  setMode('agent');
   post({ type: 'select_session', id: state.activeSession });
 }
 
@@ -475,6 +494,9 @@ function renderSessions() {
   const list = $('session-list');
   list.replaceChildren();
   for (const session of state.sessions) {
+    // The picker shows only the active mode's history. Sessions from older
+    // builds carry no mode and count as chat.
+    if ((session.mode || 'chat') !== state.mode) continue;
     const row = document.createElement('div');
     row.className = `session${session.id === state.activeSession ? ' active' : ''}`;
     row.title = session.title;
@@ -901,7 +923,7 @@ function sendMessage() {
     type: 'send',
     session_id: state.activeSession,
     text,
-    mode: state.activeAgent ? 'agent' : 'chat',
+    mode: state.activeAgent ? 'agent' : (state.mode === 'api' ? 'api' : 'chat'),
     agent_id: state.activeAgent?.id || '',
     effort: $('effort').value,
     resource_ids: attached.map(item => item.id)
@@ -1389,13 +1411,17 @@ $('halt-model').onclick = () => {
 };
 
 
-$('mode-chat').onclick = () => { state.activeAgent = null; syncComposerAgent(); setMode('chat'); };
-$('mode-agent').onclick = () => { state.activeAgent = null; syncComposerAgent(); setMode('agent'); };
+for (const button of document.querySelectorAll('.mode-switch .mode')) {
+  button.onclick = () => { state.activeAgent = null; syncComposerAgent(); setMode(button.dataset.mode); };
+}
 $('back-agents').onclick = () => { state.activeAgent = null; showAgentDashboard(); };
 $('new-chat').onclick = () => {
   state.activeAgent = null;
-  setMode('chat');
-  post({ type: 'new_session' });
+  // A new conversation belongs to the surface it was started from. Agent and
+  // Agora have their own creation paths, so New chat lands those on chat.
+  const mode = state.mode === 'api' ? 'api' : 'chat';
+  setMode(mode);
+  post({ type: 'new_session', mode });
 };
 $('refresh-history').onclick = () => post({ type: 'refresh_sessions' });
 $('send').onclick = sendMessage;
