@@ -397,12 +397,32 @@ const handlers = {
 
 const WORKSPACE_MODES = ['chat', 'agent', 'api', 'agora'];
 
+function clearTranscript() {
+  cancelStreamRender();
+  state.streaming = null;
+  transcript.replaceChildren();
+  renderEmptyState();
+}
+
 function setMode(mode) {
   if (!WORKSPACE_MODES.includes(mode)) mode = 'chat';
   state.mode = mode;
   for (const button of document.querySelectorAll('.mode-switch .mode'))
     button.classList.toggle('active', button.dataset.mode === mode);
   $('halt-api').hidden = mode !== 'api';
+  // The transcript must follow the tab: keep the active session only if it
+  // belongs to this mode, otherwise jump to the mode's newest conversation
+  // or show an empty surface.
+  const visible = state.sessions.filter(s => (s.mode || 'chat') === mode);
+  if (!visible.some(s => s.id === state.activeSession)) {
+    if (visible.length) {
+      state.activeSession = visible[0].id;
+      post({ type: 'select_session', id: state.activeSession });
+    } else {
+      state.activeSession = '';
+      clearTranscript();
+    }
+  }
   renderSessions();
   if (mode === 'agora') showAgoraView();
   else if (mode === 'agent' && !state.activeAgent) showAgentDashboard();
@@ -413,7 +433,10 @@ function showChatView() {
   $('chat-view').classList.add('active');
   $('agent-view').classList.remove('active');
   $('agora-view').classList.remove('active');
-  $('back-agents').hidden = !state.activeAgent;
+  // In Agent mode the back button always offers the way home to the agent
+  // dashboard - including when browsing a past agent session with no live
+  // agent attached.
+  $('back-agents').hidden = state.mode !== 'agent';
   $('agent-banner').hidden = !state.activeAgent;
   $('api-banner').hidden = state.mode !== 'api';
   if (state.mode === 'api' && !state.activeAgent) {
@@ -518,6 +541,10 @@ function renderSessions() {
       state.activeSession = session.id;
       renderSessions();
       post({ type: 'select_session', id: session.id });
+      // Selecting a conversation always surfaces its transcript - in Agent
+      // mode the dashboard would otherwise stay on top and the session would
+      // be unreachable after its run.
+      showChatView();
     };
     list.append(row);
   }
