@@ -352,10 +352,7 @@ const handlers = {
 
   cancelled(message) {
     if (message.session_id === state.activeSession) {
-      if (state.streaming) {
-        state.streaming.querySelector('.message-text').classList.remove('cursor');
-        state.streaming = null;
-      }
+      clearStreamingRemnant();
       addToolChip('STOPPED', 'Generation cancelled.', 'error');
     }
   },
@@ -365,10 +362,7 @@ const handlers = {
       toast(message.message || 'Background operation failed.', true);
       return;
     }
-    if (state.streaming) {
-      state.streaming.querySelector('.message-text').classList.remove('cursor');
-      state.streaming = null;
-    }
+    clearStreamingRemnant();
     if (message.session_id) addToolChip('ERROR', message.message || 'Unknown error', 'error');
     else toast(message.message || 'Unknown error', true);
     state.pendingUser = null;
