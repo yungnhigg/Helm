@@ -233,6 +233,7 @@ const handlers = {
     updateComposerState();
     if (message.session_id !== state.activeSession) return;
     removeEmptyState();
+    clearStreamingRemnant();
     state.streaming = addMessage('assistant', '', false, false);
     state.streaming.querySelector('.message-text').classList.add('cursor');
   },
@@ -383,6 +384,9 @@ const handlers = {
     // the next inference step. Busy tracks the task, not the turn, so the
     // stop control stays available until the work is actually finished.
     const taskActive = !!(message && message.task_active);
+    if (!message || !message.session_id || message.session_id === state.activeSession) {
+      clearStreamingRemnant();
+    }
     if (!taskActive) {
       // Any job row left in the strip missed its terminal update; clear it
       // rather than leaving a progress bar stuck at the top of the view.
@@ -814,6 +818,26 @@ function syncComposerAgent() {
   } else {
     wrap.classList.remove('agent-active');
     if (input) input.placeholder = 'Message Helm';
+  }
+}
+
+// A generation that produced no visible answer - a guard refusal, a failed
+// argument validation, an unknown tool - leaves its assistant bubble empty
+// with the cursor still blinking. Left alone they stack up and read as
+// several concurrent generations. Drop an empty bubble (keeping any captured
+// reasoning, as tool_call does) and strip the cursor from a non-empty one.
+function clearStreamingRemnant() {
+  if (!state.streaming) return;
+  cancelStreamRender();
+  const item = state.streaming;
+  state.streaming = null;
+  const text = item.querySelector('.message-text');
+  if (!text) return;
+  if (!(item._raw || '').trim() && !text.textContent.trim()) {
+    if (item.querySelector('.thinking')) text.remove();
+    else item.remove();
+  } else {
+    text.classList.remove('cursor');
   }
 }
 
