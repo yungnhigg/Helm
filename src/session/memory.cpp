@@ -78,9 +78,9 @@ static std::string content_version(const std::string& text) {
     return out;
 }
 
-std::string LocalMemoryStore::version() const {
+MemorySnapshot LocalMemoryStore::snapshot() const {
     std::lock_guard<std::mutex> guard(m_);
-    return content_version(cache_);
+    return { cache_, cache_.size(), content_version(cache_) };
 }
 
 MemoryStatus LocalMemoryStore::replace(const std::string& text, const std::string& expected_version) {

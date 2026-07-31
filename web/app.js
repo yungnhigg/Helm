@@ -94,6 +94,10 @@ const handlers = {
   sessions(message) {
     state.sessions = Array.isArray(message.list) ? message.list : [];
     if (message.active) state.activeSession = message.active;
+    // The backend's notion of "active" is mode-blind: deleting the active
+    // session reselects (or creates) across ALL modes, which would bind this
+    // surface to a session its own sidebar cannot show.
+    reconcileActiveSession();
     renderSessions();
   },
 
@@ -308,9 +312,16 @@ const handlers = {
   },
 
   memory(message) {
-    state.memory = message;
     const box = $('memory-text');
-    if (box && document.activeElement !== box) box.value = message.text || '';
+    // Text and version token move together: adopting a fresh token while a
+    // stale draft stays on screen would let the next save pass the
+    // compare-and-swap and clobber concurrent entries - the exact loss the
+    // token exists to prevent. Mid-edit pushes are dropped entirely; the
+    // next get_memory (reopening Settings) reloads both.
+    if (!box || document.activeElement !== box) {
+      state.memory = message;
+      if (box) box.value = message.text || '';
+    }
     const meter = $('memory-meter');
     if (meter) {
       meter.textContent = `${message.bytes} / ${message.budget} bytes`;
@@ -404,6 +415,22 @@ function clearTranscript() {
   renderEmptyState();
 }
 
+// Keep the active session inside the active mode: jump to the mode's newest
+// conversation, or clear the surface when the mode has none. Posting
+// select_session only on an actual change keeps the sessions push that
+// follows from looping back through here.
+function reconcileActiveSession() {
+  const visible = state.sessions.filter(s => (s.mode || 'chat') === state.mode);
+  if (visible.some(s => s.id === state.activeSession)) return;
+  if (visible.length) {
+    state.activeSession = visible[0].id;
+    post({ type: 'select_session', id: state.activeSession });
+  } else {
+    state.activeSession = '';
+    clearTranscript();
+  }
+}
+
 function setMode(mode) {
   if (!WORKSPACE_MODES.includes(mode)) mode = 'chat';
   state.mode = mode;
@@ -411,19 +438,7 @@ function setMode(mode) {
     button.classList.toggle('active', button.dataset.mode === mode);
   $('halt-api').hidden = mode !== 'api';
   $('new-chat-label').textContent = mode === 'agent' ? 'New agent' : 'New chat';
-  // The transcript must follow the tab: keep the active session only if it
-  // belongs to this mode, otherwise jump to the mode's newest conversation
-  // or show an empty surface.
-  const visible = state.sessions.filter(s => (s.mode || 'chat') === mode);
-  if (!visible.some(s => s.id === state.activeSession)) {
-    if (visible.length) {
-      state.activeSession = visible[0].id;
-      post({ type: 'select_session', id: state.activeSession });
-    } else {
-      state.activeSession = '';
-      clearTranscript();
-    }
-  }
+  reconcileActiveSession();
   renderSessions();
   if (mode === 'agora') showAgoraView();
   else if (mode === 'agent' && !state.activeAgent) showAgentDashboard();
@@ -788,7 +803,16 @@ function runOperator(raw) {
     addToolChip('/help', OPERATORS.map(op => `/${op.name} ${op.arg}`.trim() + ' — ' + op.help).join('\n'), 'result');
     return true;
   }
-  if (name === 'new') { post({ type: 'new_session' }); return true; }
+  if (name === 'new') {
+    // Mirrors the New chat button: without a mode the backend defaults to a
+    // chat session, which an API/Agent surface could never show.
+    state.activeAgent = null;
+    syncComposerAgent();
+    const mode = state.mode === 'api' ? 'api' : 'chat';
+    setMode(mode);
+    post({ type: 'new_session', mode });
+    return true;
+  }
   if (name === 'model') {
     if (!args) { toast('Usage: /model <name>', true); return true; }
     const want = args.toLowerCase();

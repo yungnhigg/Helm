@@ -30,11 +30,12 @@ Bridge::Bridge(Config& cfg, Engine& eng, AgentLoop& loop, JobManager& jobs, ISes
       workspace_(workspace), reg_(reg), hwnd_(hwnd), post_(std::move(post)) {}
 
 void Bridge::send_memory() {
+    const MemorySnapshot snap = memory_.snapshot();
     emit({{"type", "memory"},
-          {"text", memory_.text()},
-          {"bytes", memory_.bytes()},
+          {"text", snap.text},
+          {"bytes", snap.bytes},
           {"budget", memory_.budget()},
-          {"version", memory_.version()},
+          {"version", snap.version},
           {"enabled", cfg_.enable_memory},
           {"path", memory_.path()}});
 }
@@ -311,7 +312,11 @@ void Bridge::on_web_message(const std::wstring& raw) {
                                         j.value("version", std::string()));
         emit({{"type", "memory_saved"}, {"ok", st.ok}, {"message", st.message},
               {"bytes", st.bytes}, {"budget", st.budget}});
-        send_memory();
+        // Push the fresh state only on success. On a rejected save the
+        // editor keeps the user's draft on screen - focus sits on the Save
+        // button at that moment, so an unconditional push would blow the
+        // draft away an instant after telling the user to go merge it.
+        if (st.ok) send_memory();
         return;
     }
 

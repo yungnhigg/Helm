@@ -31,6 +31,12 @@ struct MemoryStatus {
     std::string version;
 };
 
+struct MemorySnapshot {
+    std::string text;
+    size_t bytes = 0;
+    std::string version;
+};
+
 // The memory seam for Phase E's server backend, mirroring ISessionStore.
 class IMemoryStore {
 public:
@@ -46,8 +52,10 @@ public:
     // the compare-and-swap that stops two writers from silently losing edits.
     virtual MemoryStatus replace(const std::string& text, const std::string& expected_version) = 0;
 
-    // Version token of the current content, for later replace() calls.
-    virtual std::string version() const = 0;
+    // Text and its version token taken under ONE lock. Reading them through
+    // separate calls can pair old text with a new token when a tool append
+    // lands in between - and that torn pair defeats the compare-and-swap.
+    virtual MemorySnapshot snapshot() const = 0;
 
     // Append one entry as a bullet. Refuses if it would exceed budget.
     virtual MemoryStatus append(const std::string& entry) = 0;
@@ -69,7 +77,7 @@ public:
     size_t bytes() const override;
     size_t budget() const override { return budget_; }
     MemoryStatus replace(const std::string& text, const std::string& expected_version) override;
-    std::string version() const override;
+    MemorySnapshot snapshot() const override;
     MemoryStatus append(const std::string& entry) override;
     MemoryStatus forget(const std::string& needle) override;
     std::string prompt_block() const override;
