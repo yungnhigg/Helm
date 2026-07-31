@@ -5,6 +5,7 @@
 #include <sstream>
 #include <algorithm>
 #include <cctype>
+#include <cstdio>
 
 namespace fs = std::filesystem;
 
@@ -64,18 +65,47 @@ size_t LocalMemoryStore::bytes() const {
     return cache_.size();
 }
 
-MemoryStatus LocalMemoryStore::replace(const std::string& text) {
+// FNV-1a over the content, hex-encoded. Cheap enough to compute per call and
+// stable across processes, which is all a compare-and-swap token needs.
+static std::string content_version(const std::string& text) {
+    unsigned long long hash = 1469598103934665603ULL;
+    for (unsigned char c : text) {
+        hash ^= static_cast<unsigned long long>(c);
+        hash *= 1099511628211ULL;
+    }
+    char out[17];
+    std::snprintf(out, sizeof(out), "%016llx", hash);
+    return out;
+}
+
+std::string LocalMemoryStore::version() const {
+    std::lock_guard<std::mutex> guard(m_);
+    return content_version(cache_);
+}
+
+MemoryStatus LocalMemoryStore::replace(const std::string& text, const std::string& expected_version) {
     std::lock_guard<std::mutex> guard(m_);
     MemoryStatus st;
     st.budget = budget_;
     st.bytes = text.size();
+    // Reject a save based on stale content before anything else: a tool
+    // append or a second editor may have changed the file since this copy
+    // was loaded, and last-writer-wins silently loses those entries.
+    if (!expected_version.empty() && expected_version != content_version(cache_)) {
+        st.bytes = cache_.size();
+        st.version = content_version(cache_);
+        st.message = "memory changed since this editor loaded it - reopen Settings to reload before saving";
+        return st;
+    }
     if (text.size() > budget_) {
+        st.version = content_version(cache_);
         st.message = "memory is " + std::to_string(text.size()) + " bytes, over the " +
                      std::to_string(budget_) + " byte budget; trim it before saving";
         return st;
     }
-    if (!save_locked(text)) { st.message = "could not write memory file"; return st; }
+    if (!save_locked(text)) { st.version = content_version(cache_); st.message = "could not write memory file"; return st; }
     st.ok = true;
+    st.version = content_version(cache_);
     st.message = "memory saved (" + std::to_string(text.size()) + " bytes)";
     return st;
 }

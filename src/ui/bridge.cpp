@@ -34,6 +34,7 @@ void Bridge::send_memory() {
           {"text", memory_.text()},
           {"bytes", memory_.bytes()},
           {"budget", memory_.budget()},
+          {"version", memory_.version()},
           {"enabled", cfg_.enable_memory},
           {"path", memory_.path()}});
 }
@@ -306,7 +307,8 @@ void Bridge::on_web_message(const std::wstring& raw) {
     }
 
     if (type == "save_memory") {
-        const auto st = memory_.replace(j.value("text", std::string()));
+        const auto st = memory_.replace(j.value("text", std::string()),
+                                        j.value("version", std::string()));
         emit({{"type", "memory_saved"}, {"ok", st.ok}, {"message", st.message},
               {"bytes", st.bytes}, {"budget", st.budget}});
         send_memory();

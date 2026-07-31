@@ -26,6 +26,9 @@ struct MemoryStatus {
     std::string message;
     size_t bytes = 0;
     size_t budget = 0;
+    // Content version after the call (set by replace; the editor round-trips
+    // it so a stale save is rejected instead of clobbering newer entries).
+    std::string version;
 };
 
 // The memory seam for Phase E's server backend, mirroring ISessionStore.
@@ -38,8 +41,13 @@ public:
     virtual size_t bytes() const = 0;
     virtual size_t budget() const = 0;
 
-    // Replace the whole file (settings editor). Refuses if over budget.
-    virtual MemoryStatus replace(const std::string& text) = 0;
+    // Replace the whole file (settings editor). Refuses if over budget, or if
+    // expected_version is non-empty and no longer matches the stored content -
+    // the compare-and-swap that stops two writers from silently losing edits.
+    virtual MemoryStatus replace(const std::string& text, const std::string& expected_version) = 0;
+
+    // Version token of the current content, for later replace() calls.
+    virtual std::string version() const = 0;
 
     // Append one entry as a bullet. Refuses if it would exceed budget.
     virtual MemoryStatus append(const std::string& entry) = 0;
@@ -60,7 +68,8 @@ public:
     std::string text() const override;
     size_t bytes() const override;
     size_t budget() const override { return budget_; }
-    MemoryStatus replace(const std::string& text) override;
+    MemoryStatus replace(const std::string& text, const std::string& expected_version) override;
+    std::string version() const override;
     MemoryStatus append(const std::string& entry) override;
     MemoryStatus forget(const std::string& needle) override;
     std::string prompt_block() const override;

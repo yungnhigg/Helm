@@ -1501,7 +1501,13 @@ $('input').addEventListener('blur', () => {
 
 // Memory editor
 if ($('save-memory')) {
-  $('save-memory').onclick = () => post({ type: 'save_memory', text: $('memory-text').value });
+  // The version token round-trips so a save based on stale content is
+  // rejected instead of overwriting entries added since the editor loaded.
+  $('save-memory').onclick = () => post({
+    type: 'save_memory',
+    text: $('memory-text').value,
+    version: state.memory?.version || '',
+  });
 }
 if ($('memory-text')) {
   $('memory-text').addEventListener('input', () => {
