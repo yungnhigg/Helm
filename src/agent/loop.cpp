@@ -470,6 +470,73 @@ std::vector<Message> AgentLoop::trimmed_history(const std::string& session_id,
     return msgs;
 }
 
+// Terminal wrap-up for an aborted run. The watchdog proved the model is
+// repeating non-progressing actions; killing the turn with a bare error threw
+// away everything the run had already gathered. Instead, one final generation
+// runs with a reply-only grammar - tool_call is removed from the output space
+// entirely, so the model physically cannot spin further - and an instruction
+// to answer from the material already in the transcript. Harmony models have
+// no grammar; the instruction plus the single attempt bounds them.
+void AgentLoop::finish_with_wrapup(const std::string& session_id, const TurnOptions& options,
+                                   const std::string& docs, int token_limit, bool harmony,
+                                   const std::string& abort_message) {
+    PromptBuilder pb(cfg_);
+    store_.append(session_id, {Role::Tool,
+        "Tool use is finished for this turn: the run stopped making progress. Do not attempt "
+        "any more tool calls. Using ONLY the information already gathered in this conversation, "
+        "write your best final answer to the user's request now. If the gathered results do not "
+        "fully answer it, summarize what was found and state plainly what is missing.",
+        "run_controller"});
+    send_for(session_id, "note", {{"text", "Run stopped making progress - wrapping up with a final answer from what was gathered."}});
+
+    GrammarOptions gopt{cfg_.enable_thinking, true};
+    const std::string grammar = harmony ? std::string{} : build_agent_grammar({}, gopt);
+
+    const auto current = store_.messages(session_id);
+    std::string query;
+    for (auto it = current.rbegin(); it != current.rend(); ++it) {
+        if (it->role == Role::User) { query = it->content; break; }
+    }
+    const std::string extra = workspace_prompt(options, query);
+    const auto history = trimmed_history(session_id, docs, extra, token_limit, harmony, options.effort);
+    const std::string prompt = harmony ? pb.build_harmony(history, docs, extra, options.effort)
+                                       : pb.build(history, docs, extra);
+
+    send_for(session_id, "gen_started");
+    StreamFilter filter;
+    HarmonyStreamFilter harmony_filter;
+    GenResult r = eng_.generate_sync(prompt, grammar, [&](const std::string& piece) {
+        FilterOut out = harmony ? harmony_filter.feed(piece) : filter.feed(piece);
+        if (!out.content.empty())  send_for(session_id, "token",    {{"text", out.content}});
+        if (!out.thinking.empty()) send_for(session_id, "thinking", {{"text", out.thinking}});
+    }, token_limit);
+
+    if (r.reason == StopReason::Cancelled) { send_for(session_id, "cancelled"); return; }
+
+    std::string content, thinking;
+    bool have_reply = false;
+    if (r.reason != StopReason::Error && r.reason != StopReason::CtxFull) {
+        json output;
+        if (harmony) {
+            have_reply = parse_harmony_response(r.text, output) && output.value("type", "") == "reply";
+        } else {
+            try { output = json::parse(r.text); have_reply = output.value("type", "") == "reply"; }
+            catch (...) {}
+        }
+        if (have_reply) { content = output.value("content", ""); thinking = output.value("thinking", ""); }
+    }
+    if (have_reply && !content.empty()) {
+        store_.append(session_id, {Role::Assistant, content, ""});
+        send_for(session_id, "assistant_final", {{"text", content}, {"thinking", thinking}});
+        // The user still learns why the run ended, but as context, not a failure.
+        send_for(session_id, "note", {{"text", abort_message}});
+        return;
+    }
+    // The wrap-up generation itself failed - surface the original abort.
+    store_.append(session_id, {Role::Assistant, abort_message, ""});
+    send_for(session_id, "error", {{"message", abort_message}});
+}
+
 void AgentLoop::run_turn(const std::string& session_id, const TurnOptions& options) {
     PromptBuilder pb(cfg_);
     // Both Chat and Agent modes can call the full registered tool set.
@@ -636,8 +703,7 @@ void AgentLoop::run_turn(const std::string& session_id, const TurnOptions& optio
                 const GuardDecision stall = watchdog->on_stalling_reply(content);
                 log("stalling reply detected: " + content.substr(0, 80));
                 if (stall.abort_run) {
-                    store_.append(session_id, {Role::Assistant, stall.message, ""});
-                    send_for(session_id, "error", {{"message", stall.message}});
+                    finish_with_wrapup(session_id, options, docs, token_limit, harmony, stall.message);
                     return;
                 }
                 store_.append(session_id, {Role::Tool, stall.message, "run_controller"});
@@ -698,13 +764,17 @@ void AgentLoop::run_turn(const std::string& session_id, const TurnOptions& optio
 
         // Exact-repeat and stalled-resource protection applies in Chat and Agent
         // modes alike. It is progress-based, not a tool-call budget.
+        //
+        // Refusals ride the run_controller rail, NOT the tool's own name: a
+        // message tagged "[fetch_web_page] error: ..." reads to the model as a
+        // failed fetch, which invites exactly the retry the guard is refusing.
         const GuardDecision guard = watchdog->before_call(name, args);
         if (!guard.allow) {
             log("progress watchdog refused tool_call: " + guard.signature);
-            store_.append(session_id, {Role::Tool, guard.message, name});
-            send_for(session_id, "tool_result", {{"name", name}, {"result", guard.message}});
+            store_.append(session_id, {Role::Tool, guard.message, "run_controller"});
+            send_for(session_id, "tool_result", {{"name", "run_controller"}, {"result", guard.message}});
             if (guard.abort_run) {
-                send_for(session_id, "error", {{"message", guard.message}});
+                finish_with_wrapup(session_id, options, docs, token_limit, harmony, guard.message);
                 return;
             }
             continue;
@@ -779,7 +849,15 @@ void AgentLoop::run_turn(const std::string& session_id, const TurnOptions& optio
             [this, session_id, options, args, watchdog, wait_state](int jid, const std::string& jname, JobStatus status, const std::string& result) {
                 const char* s = status == JobStatus::Done ? "done" : status == JobStatus::Cancelled ? "cancelled" : "failed";
                 send_for(session_id, "job_update", {{"id", jid}, {"name", jname}, {"progress", 100}, {"note", result}, {"status", s}});
-                const std::string recorded = clamp_tool_result("job " + std::to_string(jid) + " " + s + ": " + result, jname);
+                // A completed job's answer must read exactly like a sync tool
+                // result. The old "job N done:" prefix was status plumbing the
+                // model treated as noise - and worse, it hid "error:" result
+                // prefixes from the watchdog's failure detection, so timed-out
+                // fetches counted as progress. Failures keep an explicit
+                // error: prefix; successes are the raw result.
+                const std::string recorded = clamp_tool_result(
+                    status == JobStatus::Done ? result
+                        : "error: " + jname + " " + std::string(s) + ": " + result, jname);
                 watchdog->after_result(jname, args, recorded);
                 ledger_.record(options.agent_id, options.task_key, jname, args, recorded,
                                static_cast<std::size_t>(cfg_.agent_ledger_max_entries));

@@ -64,6 +64,11 @@ public:
 
 private:
     void run_turn(const std::string& session_id, const TurnOptions& options);
+    // One final reply-only generation after a watchdog abort, so gathered
+    // results become an answer instead of a dead turn.
+    void finish_with_wrapup(const std::string& session_id, const TurnOptions& options,
+                            const std::string& docs, int token_limit, bool harmony,
+                            const std::string& abort_message);
     std::vector<Message> trimmed_history(const std::string& session_id,
                                          const std::string& tool_docs,
                                          const std::string& extra_system,
