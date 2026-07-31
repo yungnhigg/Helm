@@ -410,6 +410,7 @@ function setMode(mode) {
   for (const button of document.querySelectorAll('.mode-switch .mode'))
     button.classList.toggle('active', button.dataset.mode === mode);
   $('halt-api').hidden = mode !== 'api';
+  $('new-chat-label').textContent = mode === 'agent' ? 'New agent' : 'New chat';
   // The transcript must follow the tab: keep the active session only if it
   // belongs to this mode, otherwise jump to the mode's newest conversation
   // or show an empty surface.
@@ -1445,8 +1446,11 @@ for (const button of document.querySelectorAll('.mode-switch .mode')) {
 $('back-agents').onclick = () => { state.activeAgent = null; showAgentDashboard(); };
 $('new-chat').onclick = () => {
   state.activeAgent = null;
-  // A new conversation belongs to the surface it was started from. Agent and
-  // Agora have their own creation paths, so New chat lands those on chat.
+  syncComposerAgent();
+  // In Agent mode the button reads "New agent" and returns to the agent
+  // screen, where agents are created and run. Everywhere else it starts a
+  // conversation belonging to the active surface.
+  if (state.mode === 'agent') { showAgentDashboard(); return; }
   const mode = state.mode === 'api' ? 'api' : 'chat';
   setMode(mode);
   post({ type: 'new_session', mode });
