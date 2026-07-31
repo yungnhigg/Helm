@@ -43,9 +43,13 @@
           </div>
         </div>
         <div class="topbar-actions">
-          <button id="stop-agent" class="danger" hidden title="Stop the perpetual run after the current batch">■ Stop loop</button>
           <div class="model-control-group">
             <button id="open-settings" class="icon-btn settings-button" title="Runtime settings">⚙</button>
+            <div id="activity-pill" class="activity-pill" hidden>
+              <span class="activity-spinner" aria-hidden="true"></span>
+              <span id="activity-label">Working</span>
+              <button id="halt-model" class="halt-btn" title="Halt this machine's model: cancels generation, ends any agent loop">Halt</button>
+            </div>
             <div class="model-status">
               <span id="model-led" class="status-dot"></span>
               <span id="model-status-text">No model loaded</span>
@@ -93,7 +97,6 @@
               </div>
               <div class="send-group">
                 <span id="composer-hint">Enter to send · Shift+Enter for newline</span>
-                <button id="stop" class="danger stop" hidden>■ Stop</button>
                 <button id="send" class="send" title="Send">➤</button>
               </div>
             </div>

@@ -598,3 +598,43 @@ fieldset { margin: 0; padding: 0; border: 0; }
 .model-manage-delfile { display: flex; align-items: center; gap: 5px; font-size: 10.5px; color: var(--muted); white-space: nowrap; }
 
 #stop-agent { min-height: 36px; white-space: nowrap; }
+
+
+/* ---- Phase B: activity + halt ------------------------------------------
+   One control halts this machine's model. The pill reports WHAT is running so
+   "is it still going?" is answerable at a glance, and the halt sits beside it
+   rather than in the composer, because it must also end agent loops that have
+   no composer. The same halt path is reachable from the server later; the
+   Engine cannot tell whether the order came from this button or the network. */
+.activity-pill {
+  display: flex; align-items: center; gap: 8px;
+  padding: 3px 4px 3px 10px; margin-bottom: 6px;
+  background: var(--surface-2); border: 1px solid var(--accent-line);
+  border-radius: 999px; font-size: 11.5px; color: var(--accent-text);
+}
+.activity-spinner {
+  width: 11px; height: 11px; flex: 0 0 auto; border-radius: 50%;
+  border: 2px solid rgba(217,154,166,.28); border-top-color: var(--accent-text);
+  animation: helm-spin .8s linear infinite;
+}
+@keyframes helm-spin { to { transform: rotate(360deg); } }
+#activity-label { white-space: nowrap; }
+.halt-btn {
+  height: 22px; padding: 0 10px; border-radius: 999px; cursor: pointer;
+  background: var(--danger); border: 1px solid rgba(122,41,59,.9);
+  color: #fff; font: inherit; font-size: 11px;
+}
+.halt-btn:hover { background: #8f3145; }
+
+/* Which conversation is thinking, visible from the sidebar even when you have
+   navigated away from it. */
+.session-spinner {
+  width: 10px; height: 10px; flex: 0 0 auto; margin-right: 6px; border-radius: 50%;
+  border: 2px solid rgba(217,154,166,.25); border-top-color: var(--accent-text);
+  animation: helm-spin .8s linear infinite;
+}
+.session.thinking .session-title { color: var(--accent-text); }
+
+@media (prefers-reduced-motion: reduce) {
+  .activity-spinner, .session-spinner { animation-duration: 2.4s; }
+}

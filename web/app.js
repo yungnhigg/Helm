@@ -6,6 +6,8 @@ const post = message => window.chrome.webview.postMessage(JSON.stringify(message
 const state = {
   mode: 'chat',
   activeSession: '',
+  busySession: '',
+  agentActive: false,
   sessions: [],
   models: [],
   activeModel: '',
@@ -45,6 +47,8 @@ const handlers = {
     state.modelLoaded = !!message.model_loaded;
     state.activeModel = message.active_model_id || state.activeModel;
     state.busy = !!message.busy;
+    if (!state.busy) state.busySession = '';
+    renderActivity();
     $('model-led').className = 'status-dot' + (state.modelLoaded ? ' loaded' : '');
     const model = state.models.find(item => item.id === state.activeModel);
     $('model-status-text').textContent = state.modelLoaded
@@ -191,7 +195,7 @@ const handlers = {
   },
 
   agent_opened(message) {
-    if (message.batch !== undefined) { const b=$('stop-agent'); if(b) b.hidden=false; }
+    if (message.batch !== undefined) { state.agentActive = true; renderActivity(); }
     state.activeSession = message.session_id;
     state.activeAgent = state.agents.find(agent => agent.id === message.agent_id) || null;
     if (state.activeAgent?.model_id && state.activeAgent.model_id !== state.activeModel) {
@@ -215,6 +219,9 @@ const handlers = {
     if (message.session_id === state.activeSession && state.pendingUser) state.pendingUser.remove();
     state.pendingUser = null;
     state.busy = false;
+    state.busySession = '';
+    renderActivity();
+    renderSessions();
     toast(message.message || 'Turn rejected.', true);
     updateComposerState();
     renderEmptyState();
@@ -222,6 +229,9 @@ const handlers = {
 
   gen_started(message) {
     state.busy = true;
+    state.busySession = message.session_id || state.activeSession;
+    renderActivity();
+    renderSessions();
     updateComposerState();
     if (message.session_id !== state.activeSession) return;
     removeEmptyState();
@@ -364,6 +374,9 @@ const handlers = {
     else toast(message.message || 'Unknown error', true);
     state.pendingUser = null;
     state.busy = false;
+    state.busySession = '';
+    renderActivity();
+    renderSessions();
     syncModelSelections();
     updateComposerState();
   },
@@ -374,6 +387,9 @@ const handlers = {
     // progress bar stuck at the top of the view.
     clearFinishedJobs();
     state.busy = false;
+    state.busySession = '';
+    renderActivity();
+    renderSessions();
     state.pendingUser = null;
     updateComposerState();
     post({ type: 'refresh_sessions' });
@@ -461,8 +477,14 @@ function renderSessions() {
   list.replaceChildren();
   for (const session of state.sessions) {
     const row = document.createElement('div');
-    row.className = `session${session.id === state.activeSession ? ' active' : ''}`;
-    row.title = session.title;
+    const thinking = state.busy && session.id === state.busySession;
+    row.className = `session${session.id === state.activeSession ? ' active' : ''}${thinking ? ' thinking' : ''}`;
+    row.title = thinking ? `${session.title} - generating` : session.title;
+    if (thinking) {
+      const spin = document.createElement('span');
+      spin.className = 'session-spinner';
+      row.append(spin);
+    }
     const title = document.createElement('span');
     title.className = 'session-title';
     title.textContent = session.title || 'New conversation';
@@ -491,7 +513,7 @@ function renderAgents() {
     agents: state.agents,
     post,
     effort: () => $('effort')?.value || 'medium',
-    revealStop: () => { const button = $('stop-agent'); if (button) button.hidden = false; },
+    revealStop: () => { state.agentActive = true; renderActivity(); },
     toast
   });
 }
@@ -875,7 +897,6 @@ function sendMessage() {
 
 function updateComposerState() {
   $('send').disabled = state.busy;
-  $('stop').hidden = !state.busy;
   $('send').hidden = state.busy;
   $('input').disabled = false;
   $('chat-model').disabled = state.busy;
@@ -1344,7 +1365,25 @@ function updateMicState(note = '') {
   else $('composer-hint').textContent = 'Enter to send · Shift+Enter for newline';
 }
 
-const _stopBtn = $('stop-agent'); if (_stopBtn) _stopBtn.onclick = () => { post({ type: 'stop_agent' }); _stopBtn.hidden = true; for (const item of document.querySelectorAll('.agent-action-loop')) item.setAttribute('aria-pressed', 'false'); };
+$('halt-model').onclick = () => {
+  // One control, three effects: cancel the in-flight generation, end any
+  // perpetual run, and clear loop toggles. Scoped to THIS machine's engine.
+  post({ type: 'halt_model' });
+  state.agentActive = false;
+  for (const item of document.querySelectorAll('.agent-action-loop')) item.setAttribute('aria-pressed', 'false');
+  renderActivity();
+};
+
+function renderActivity() {
+  const pill = $('activity-pill');
+  if (!pill) return;
+  const running = state.busy || state.agentActive;
+  pill.hidden = !running;
+  if (!running) return;
+  $('activity-label').textContent = state.agentActive
+    ? (state.busy ? 'Agent active' : 'Agent queued')
+    : 'Generating';
+}
 $('mode-chat').onclick = () => { state.activeAgent = null; syncComposerAgent(); setMode('chat'); };
 $('mode-agent').onclick = () => { state.activeAgent = null; syncComposerAgent(); setMode('agent'); };
 $('back-agents').onclick = () => { state.activeAgent = null; showAgentDashboard(); };
@@ -1355,7 +1394,6 @@ $('new-chat').onclick = () => {
 };
 $('refresh-history').onclick = () => post({ type: 'refresh_sessions' });
 $('send').onclick = sendMessage;
-$('stop').onclick = () => post({ type: 'cancel' });
 $('attach-files').onclick = () => post({ type: 'pick_attachments' });
 $('mic').onclick = toggleMicrophone;
 $('jump-bottom').onclick = () => { state.followOutput = true; scrollTranscript(true); };

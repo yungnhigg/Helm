@@ -244,10 +244,24 @@ void Bridge::import_files(const std::string& kind, const std::wstring& title, bo
     send_workspace();
 }
 
+void Bridge::halt_local_model(const std::string& origin) {
+    // Order matters: cancel generation first so the current batch ends quickly,
+    // then latch the stop so no further batch starts.
+    eng_.cancel();
+    loop_.request_stop();
+    log("halt_local_model requested by " + origin);
+    emit({{"type", "note"},
+          {"text", origin == "ui"
+              ? std::string("Halted. Generation cancelled and any agent run ends after the current batch.")
+              : std::string("Halted by ") + origin + ". Generation cancelled and any agent run ends after the current batch."}});
+    emit({{"type", "halted"}, {"origin", origin}});
+}
+
 void Bridge::on_web_message(const std::wstring& raw) {
     json j;
     try { j = json::parse(wide_to_utf8(raw)); }
     catch (...) { log("bridge: bad inbound json"); return; }
+
     try {
         const std::string type = j.value("type", "");
 
@@ -430,6 +444,7 @@ void Bridge::on_web_message(const std::wstring& raw) {
         return;
     }
     if (type == "cancel") { eng_.cancel(); return; }
+    if (type == "halt_model") { halt_local_model("ui"); return; }
     if (type == "job_cancel") { loop_.cancel_job(j.value("id", 0)); return; }
 
     if (type == "load_model") {
@@ -592,11 +607,7 @@ void Bridge::on_web_message(const std::wstring& raw) {
     // it. An agent that needs prompting every time is not autonomous, so this
     // opens the session and immediately drives the first turn from the agent's
     // own configuration.
-    if (type == "stop_agent") {
-        loop_.request_stop();
-        emit({{"type", "note"}, {"text", "Stop requested. The current batch will finish, then the run ends."}});
-        return;
-    }
+    if (type == "stop_agent") { halt_local_model("ui"); return; }
 
     if (type == "run_agent") {
         const std::string agent_id = j.value("id", "");

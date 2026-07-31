@@ -30,6 +30,17 @@ public:
     void on_web_message(const std::wstring& raw);
     void on_wm_app_emit(LPARAM lp) noexcept;
 
+public:
+    // Single halt path for this instance's model. Cancels the in-flight
+    // generation and ends any perpetual agent run at the next batch boundary.
+    //
+    // Deliberately public and origin-tagged: the local Halt button calls it
+    // today, and the server control plane will call the SAME function over the
+    // wire once instances register. The Engine cannot distinguish the caller.
+    // Execution is always local - only this process can free this GPU - while
+    // the authority to trigger it may be remote.
+    void halt_local_model(const std::string& origin);
+
 private:
     void send_status();
     void send_models();
