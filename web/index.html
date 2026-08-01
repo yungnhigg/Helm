@@ -223,6 +223,13 @@
       <h3 class="settings-section-title">Installed models</h3>
       <div id="model-manage-list" class="model-manage-list"></div>
 
+      <h3 class="settings-section-title">Cloud APIs</h3>
+      <p class="perm-hint">Keys are stored encrypted for this Windows account and never shown again after saving. Leave a field blank to keep the existing key; type <b>clear</b> to remove it.</p>
+      <div class="form-grid settings-grid">
+        <label class="full"><span>Claude API key</span><input id="setting-anthropic-key" type="password" autocomplete="off" spellcheck="false" placeholder="not configured"></label>
+        <label class="full"><span>OpenAI API key</span><input id="setting-openai-key" type="password" autocomplete="off" spellcheck="false" placeholder="not configured"></label>
+      </div>
+
       <h3 class="settings-section-title">Local AI tools</h3>
       <div class="form-grid settings-grid">
         <label class="full"><span>Tool root</span><input id="setting-tool-root" placeholder="F:\AI Tools"></label>

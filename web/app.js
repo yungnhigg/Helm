@@ -1188,6 +1188,14 @@ function populateSettings() {
   setValue('setting-vision-model', v.vision_model || '');
   setValue('setting-vision-mmproj', v.vision_mmproj || '');
   setValue('setting-vision-cli', v.vision_cli_exe || '');
+  // Key fields always open blank - the stored value never reaches this layer.
+  // The placeholder is the only signal of whether one exists.
+  for (const [id, isSet] of [['setting-anthropic-key', v.anthropic_api_key_set],
+                             ['setting-openai-key', v.openai_api_key_set]]) {
+    const field = $(id);
+    field.value = '';
+    field.placeholder = isSet ? 'configured — blank keeps it, "clear" removes it' : 'not configured';
+  }
   setValue('setting-write-root', v.write_root || '');
   setValue('setting-image-output-dir', v.image_output_dir || '');
   setValue('setting-archive-db', v.archive_db || '');
@@ -1360,6 +1368,8 @@ function saveSettings() {
       vision_model: $('setting-vision-model').value.trim(),
       vision_mmproj: $('setting-vision-mmproj').value.trim(),
       vision_cli_exe: $('setting-vision-cli').value.trim(),
+      anthropic_api_key: $('setting-anthropic-key').value.trim(),
+      openai_api_key: $('setting-openai-key').value.trim(),
       write_root: $('setting-write-root').value.trim(),
       image_output_dir: $('setting-image-output-dir').value.trim(),
       archive_db: $('setting-archive-db').value.trim(),

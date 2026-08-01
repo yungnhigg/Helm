@@ -189,7 +189,10 @@ void Bridge::send_settings() {
               {"enable_archive_tools", cfg_.enable_archive_tools}, {"enable_vision_tools", cfg_.enable_vision_tools},
               {"enable_osint_tools", cfg_.enable_osint_tools},
               {"vision_model", cfg_.vision_model}, {"vision_mmproj", cfg_.vision_mmproj},
-              {"vision_cli_exe", cfg_.vision_cli_exe}
+              {"vision_cli_exe", cfg_.vision_cli_exe},
+              // Set/unset only. The key material stays native-side.
+              {"anthropic_api_key_set", !cfg_.anthropic_api_key.empty()},
+              {"openai_api_key_set", !cfg_.openai_api_key.empty()}
           }},
           {"detected", {
               {"python", exists(cfg_.resolved_tool_python())}, {"ffmpeg", exists(cfg_.resolved_ffmpeg())},
@@ -408,6 +411,16 @@ void Bridge::on_web_message(const std::wstring& raw) {
         cfg_.vision_model = v.value("vision_model", cfg_.vision_model);
         cfg_.vision_mmproj = v.value("vision_mmproj", cfg_.vision_mmproj);
         cfg_.vision_cli_exe = v.value("vision_cli_exe", cfg_.vision_cli_exe);
+        // Key fields: blank = keep, the literal "clear" = remove, anything
+        // else replaces. The UI never learns the stored value, so a plain
+        // overwrite-with-payload here would wipe keys on every unrelated save.
+        auto apply_key = [&](const char* field, std::string& target) {
+            const std::string value = v.value(field, std::string());
+            if (value.empty()) return;
+            target = (value == "clear") ? std::string() : value;
+        };
+        apply_key("anthropic_api_key", cfg_.anthropic_api_key);
+        apply_key("openai_api_key", cfg_.openai_api_key);
         cfg_.persist_runtime_settings();
         emit({{"type", "settings_saved"}, {"reloading", eng_.loaded()}});
         send_settings();
